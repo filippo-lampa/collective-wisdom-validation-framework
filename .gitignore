@@ -9,6 +9,10 @@
 # Project-based stuff
 models/data/
 
+*.pkl
+
+*.csv
+
 # User-specific stuff
 .idea/
 .idea/**/workspace.xml

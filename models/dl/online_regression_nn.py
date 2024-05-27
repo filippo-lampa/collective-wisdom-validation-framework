@@ -42,20 +42,45 @@ means new classes can be added to the dataset.
 
 from river import datasets
 from river import evaluate
-from river import neural_net as nn
+#from river import neural_net as nn
+from torch import nn
 from river import optim
 from river import preprocessing as pp
 from river import metrics
+from river.evaluate import progressive_val_score
 
 from models.online_regression import OnlineRegression
 
 
 class OnlineRegressionNN(OnlineRegression):
 
-    def __init__(self, dataset, model_name, model):
-        super().__init__(model, dataset, model_name)
+    def __init__(self, model, model_name):
+        super().__init__(model, model_name)
+
+    def train(self, sample):
+        x = {
+            'user': sample['user'],
+            'item': sample['item']
+        }
+        self.model.learn_one(x=x, y=sample["Rating"])
+        loss = abs(sample["Rating"] - self.model.predict_one(x=x))
+        return loss
+
 
     def evaluate(self, dataset):
-        metric = metrics.MAE()
-        evaluate.progressive_val_score(dataset, self.model, metric, print_every=25_000, show_time=True, show_memory=True)
+        metric = metrics.MAE() + metrics.RMSE()
+        x_y = []
+        correct_predictions = 0
+        for index, row in dataset.iterrows():
+            x = {
+                'user': row['user'],
+                'item': row['item']
+            }
+            y = row['Rating']
+            x_y.append((x, y))
+            prediction = self.model.predict_one(x=x)
+            if int(prediction) == y:
+                correct_predictions += 1
+        score = progressive_val_score(x_y, model=self.model, metric=metric)
+        return score.data[0], score.data[1], correct_predictions / len(dataset)
 

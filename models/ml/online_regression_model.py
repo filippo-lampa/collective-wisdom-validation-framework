@@ -40,8 +40,8 @@ Domain incremental learning means new instances of data can be added to the data
 means new classes can be added to the dataset.
 '''
 
-from river import metrics
-from river.evaluate import progressive_val_score
+from river import metrics, datasets
+from river.evaluate import progressive_val_score, iter_progressive_val_score
 
 from models.online_regression import OnlineRegression
 
@@ -50,6 +50,29 @@ class OnlineRegressionModel(OnlineRegression):
     def __init__(self, model, model_name):
         super().__init__(model, model_name)
 
+    def train(self, sample):
+        x = {
+            'user': sample['user'],
+            'item': sample['item']
+        }
+        self.model.learn_one(user=sample['user'], item=sample["item"], y=sample["Rating"], x=x)
+        loss = abs(sample["Rating"] - self.model.predict_one(user=sample['user'], item=sample['item'], x=x))
+        return loss
+
+
     def evaluate(self, dataset):
         metric = metrics.MAE() + metrics.RMSE()
-        _ = progressive_val_score(dataset, self.model, metric, print_every=25_000, show_time=True, show_memory=True)
+        x_y = []
+        correct_predictions = 0
+        for index, row in dataset.iterrows():
+            x = {
+                'user': row['user'],
+                'item': row['item']
+            }
+            y = row['Rating']
+            x_y.append((x, y))
+            prediction = self.model.predict_one(user=x['user'], item=x['item'], x=x)
+            if int(prediction) == y:
+                correct_predictions += 1
+        score = progressive_val_score(x_y, model=self.model, metric=metric)
+        return score.data[0], score.data[1], correct_predictions / len(dataset)

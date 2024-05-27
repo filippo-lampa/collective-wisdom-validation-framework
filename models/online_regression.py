@@ -5,10 +5,9 @@ class OnlineRegression(ABC):
         self.model = model
         self.model_name = model_name
 
+    @abstractmethod
     def train(self, samples):
-        for x, y in samples.items():
-            self.model.learn_one({x: y})
-        self.evaluate(self.model)
+        pass
 
     @abstractmethod
     def evaluate(self, dataset):
