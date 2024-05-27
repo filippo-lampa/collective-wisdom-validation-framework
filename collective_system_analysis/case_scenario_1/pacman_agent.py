@@ -1,6 +1,5 @@
 import mesa
 
-from ghost_agent import GhostAgent
 from wall_agent import WallAgent
 
 
@@ -13,6 +12,8 @@ class PacmanAgent(mesa.Agent):
 
     def move(self):
 
+        from ghost_agent import GhostAgent
+
         ghosts_positions = []
         walls_positions = []
         for cell_content, (x, y) in self.model.grid.coord_iter():
@@ -22,7 +23,7 @@ class PacmanAgent(mesa.Agent):
                 walls_positions.append((x, y))
 
         possible_steps = []
-        x, y = self.model.grid.find_agent(self)
+        x, y = self.model.get_agents_of_type(PacmanAgent)[0].pos
 
         closest_ghost = None
 
@@ -54,7 +55,11 @@ class PacmanAgent(mesa.Agent):
 
         possible_steps = [step for step in possible_steps if step not in walls_positions]
 
-        return self.random.choice(possible_steps)
+        move = self.random.choice(possible_steps)
+
+        self.model.grid.move_agent(self, move)
+
+        return move
 
 
 

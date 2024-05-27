@@ -8,17 +8,14 @@ to maximize the chances of catching Pacman.
 '''
 import mesa
 import numpy as np
-import pandas as pd
-import random
-
 import seaborn as sns
 import matplotlib.pyplot as plt
 
-from collective_system_analysis.case_scenario_1.pacman_agent import PacmanAgent
-from collective_system_analysis.case_scenario_1.ghost_agent import GhostAgent, DataInclusionLogic
-from collective_system_analysis.case_scenario_1.wall_agent import WallAgent
+from pacman_agent import PacmanAgent
+from ghost_agent import GhostAgent, DataInclusionLogic
+from wall_agent import WallAgent
 
-from mesa import Agent, Model
+from mesa import Model
 
 
 class PacmanModel(Model):
@@ -31,9 +28,9 @@ class PacmanModel(Model):
 
         def map_terrains():
             # Define the ranges for each terrain
-            grass_range = range(0, 48)
-            mud_range = range(48, 96)
-            standard_range = range(96, 145)
+            grass_range = range(0, 55)
+            mud_range = range(55, 111)
+            standard_range = range(111, 169)
 
             # Define the slowing factors for each terrain type
             slowing_factors = {
@@ -85,13 +82,9 @@ class PacmanModel(Model):
 
         starting_ghosts_position = (6, 6)
 
-        learning_rate = 0.1
-        discount_factor = 0.9
-        exploration_rate = 0.1
-
         for i in range(1, self.num_ghosts + 1):
 
-            ghost = GhostAgent(i, self, 0.1, 0.9, 0.1, False,
+            ghost = GhostAgent(i, self, 0.8, 0.95, 0.25, False,
                                1, 100, [DataInclusionLogic.INCLUDE_HIGHER_VALUES,
                                         DataInclusionLogic.INCLUDE_NOT_PRESENT_VALUES])
 
@@ -105,16 +98,16 @@ class PacmanModel(Model):
         for i in range(self.num_ghosts + 1, self.num_ghosts + 1 + len(walls_positions)):
             wall = WallAgent(i, self)
             self.schedule.add(wall)
-            x = walls_positions[i][0]
-            y = walls_positions[i][1]
+            x = walls_positions[i - self.num_ghosts - 1][0]
+            y = walls_positions[i - self.num_ghosts - 1][1]
             self.grid.place_agent(wall, (x, y))
 
-        #self.datacollector = mesa.DataCollector(
-        #    agent_reporters={}
-        #)
+        self.datacollector = mesa.DataCollector(
+            agent_reporters={"Steps": "steps"}
+        )
 
-    def get_terrain_penalty(self, x, y):
-        cell_id = x * self.grid.width + y
+    def get_terrain_penalty(self, cell_id):
+        #cell_id = x * self.grid.width + y
         terrain_type, slowing_factor = self.terrain_map[cell_id]
         return slowing_factor
 
@@ -147,43 +140,18 @@ if __name__ == '__main__':
             elif isinstance(agent, PacmanAgent):
                 model.grid.move_agent(agent, (model.random.randrange(model.grid.width), model.random.randrange(model.grid.height)))
 
-        '''
-        if i % 5000 == 0 and i != 0:
+        if i % 50 == 0 and i != 0:
+
             model.datacollector.collect(model)
 
-            # get data for all the agents and plot them in a single graph
-
-            # get data for all the agents and plot them in a single graph where data are not nan
             agents_data = model.datacollector.get_agent_vars_dataframe().dropna()
 
-            g = sns.lineplot(data=agents_data, x="Step", y="MAE", hue="AgentID")
-            g.set(title="MAE over time - Time step " + str(i), ylabel="MAE")
+            g = sns.lineplot(data=agents_data, x="Step", y="Steps", hue="AgentID")
+            g.set(title="Steps over time - Time step " + str(i), ylabel="Steps")
             plt.show()
-
-            g = sns.lineplot(data=agents_data, x="Step", y="RMSE", hue="AgentID")
-            g.set(title="RMSE data over time - Time step " + str(i), ylabel="RMSE")
-            plt.show()
-
-            g = sns.lineplot(data=agents_data, x="Step", y="Accuracy", hue="AgentID")
-            g.set(title="Accuracy data over time - Time step " + str(i), ylabel="Accuracy")
-            plt.show()
-
-    # model_data = model.datacollector.get_model_vars_dataframe()
-
-    # g = sns.lineplot(data=model_data)
-    # g.set(title="Model data over Time", ylabel="Model Data")
 
     agents_data = model.datacollector.get_agent_vars_dataframe()
 
-    g = sns.lineplot(data=agents_data, x="Step", y="MAE", hue="AgentID")
-    g.set(title="MAE over time - Last step ", ylabel="MAE")
+    g = sns.lineplot(data=agents_data, x="Step", y="Steps", hue="AgentID")
+    g.set(title="Steps over time - Last step ", ylabel="Steps")
     plt.show()
-
-    g = sns.lineplot(data=agents_data, x="Step", y="RMSE", hue="AgentID")
-    g.set(title="RMSE data over time - Last step ", ylabel="RMSE")
-    plt.show()
-
-    g = sns.lineplot(data=agents_data, x="Step", y="Accuracy", hue="AgentID")
-    g.set(title="Accuracy data over time - Last step ", ylabel="Accuracy")
-    plt.show()
-    '''
