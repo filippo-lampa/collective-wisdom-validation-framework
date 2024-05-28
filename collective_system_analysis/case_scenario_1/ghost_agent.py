@@ -30,51 +30,52 @@ class GhostAgent(mesa.Agent):
         self.vicinity_radius = vicinity_radius
         self.bandwidth = bandwidth
         self.data_inclusion_logic = data_inclusion_logic
+        self.current_state = (6, 6)
+        self.current_state = self.current_state[0] * self.model.grid.width + self.current_state[1]
+        self.goal_state = self.model.get_agents_of_type(PacmanAgent)[0].pos
+        self.goal_state = self.goal_state[0] * self.model.grid.width + self.goal_state[1]
+
+    def init_agent(self):
+        self.model.grid.move_agent(self, (6, 6))
+        self.current_state = (6, 6)
+        self.current_state = self.current_state[0] * self.model.grid.width + self.current_state[1]
+        self.steps = 0
+        return
 
     def step(self):
 
+        self.goal_state = self.model.get_agents_of_type(PacmanAgent)[0].pos
+        self.goal_state = self.goal_state[0] * self.model.grid.width + self.goal_state[1]
+
         if self.should_use_protocol:
-            nearby_agents = self.model.grid.get_neighbors(self[0].pos, moore=True, radius=self.vicinity_radius)
+            nearby_agents = self.model.grid.get_neighbors(self.pos, moore=True, radius=self.vicinity_radius)
             for agent in nearby_agents:
                 if isinstance(agent, GhostAgent):
                     self.exchange_data(agent)
 
-        current_state = self.model.get_agents_of_type(GhostAgent).select(lambda agent: agent.unique_id == self.unique_id)[0].pos
-        current_state = current_state[0] * self.model.grid.width + current_state[1]
-        goal_state = self.model.get_agents_of_type(PacmanAgent)[0].pos
-        print("Goal: ", goal_state)
-        goal_state = goal_state[0] * self.model.grid.width + goal_state[1]
+        if self.current_state != self.goal_state:
 
-        while current_state != goal_state:
+            print("Ghost ", self.unique_id, " performing step number ", self.steps)
 
-            if self.steps % 100000 == 0:
-                agent_counts = np.zeros((self.model.grid.width, self.model.grid.height))
-                for cell_content, (x, y) in self.model.grid.coord_iter():
-                    agent_count = len(cell_content)
-                    agent_counts[x][y] = agent_count
-
-                g = sns.heatmap(agent_counts.T, cmap="viridis", annot=True, cbar=False, square=True)
-                g.figure.set_size_inches(4, 4)
-                g.set(title="Number of agents on each cell of the grid")
-                plt.show()
-
-            print("Ghost agent ", self.unique_id, ", episode number ", self.model.schedule.steps)
-            print("Ghost ", self.unique_id, " performing step number ", self.steps, " of the episode")
-
-            action = self.choose_action(current_state)
+            action = self.choose_action(self.current_state)
             next_state = self.move(action)
             reward = self.get_reward(next_state)
-            terrain_penalty_factor = self.model.get_terrain_penalty(current_state)
-            self.update(current_state, action, reward, next_state, terrain_penalty_factor)
-            current_state = next_state
+            terrain_penalty_factor = self.model.get_terrain_penalty(self.current_state)
+            self.update(self.current_state, action, reward, next_state, terrain_penalty_factor)
+            self.current_state = next_state
             self.steps += 1
+
+        else:
+
+            print("Ghost ", self.unique_id, " reached the goal state")
+
+            self.model.end_episode()
 
     def choose_action(self, state):
         if np.random.uniform(0, 1) < self.exploration_rate:
             action = np.random.randint(0, self.n_actions)
         else:
             action = np.argmax(self.q_table[state])
-        print(action)
         return action
 
     def move(self, action):
@@ -120,7 +121,7 @@ class GhostAgent(mesa.Agent):
         q_value = self.q_table[state, action]
         next_q_value = np.max(self.q_table[next_state])
         self.q_table[state, action] = (q_value + self.learning_rate *
-                                       (reward + self.discount_factor * next_q_value - q_value))# * (1 - terrain_penalty))
+                                       (reward + self.discount_factor * next_q_value - q_value) * (1 - terrain_penalty))
 
     def exchange_data(self, agent):
         data = []
@@ -139,20 +140,20 @@ class GhostAgent(mesa.Agent):
         def include_higher_values(data):
             #substitute the entries in the q_table where the value in the q_table is lower than the value in
             # [data['state'], data['action']] for the corresponding state and action
-            for index, row in data.iterrows():
+            for row in data:
                 if self.q_table[row['state'], row['action']] < row['reward']:
                     self.q_table[row['state'], row['action']] = row['reward']
 
         def include_lower_values(data):
             #substitute the entries in the q_table where the value in the q_table is higher than the value in
             # [data['state'], data['action']] for the corresponding state and action
-            for index, row in data.iterrows():
+            for row in data:
                 if self.q_table[row['state'], row['action']] > row['reward']:
                     self.q_table[row['state'], row['action']] = row['reward']
 
         def include_not_present_values(data):
             #include in the q_table the entries in data that are not present in the q_table
-            for index, row in data.iterrows():
+            for row in data:
                 if self.q_table[row['state'], row['action']] == 0:
                     self.q_table[row['state'], row['action']] = row['reward']
 

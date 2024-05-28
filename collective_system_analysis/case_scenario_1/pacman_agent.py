@@ -59,6 +59,8 @@ class PacmanAgent(mesa.Agent):
 
         self.model.grid.move_agent(self, move)
 
+        print("Pacman moved to ", move)
+
         return move
 
 
