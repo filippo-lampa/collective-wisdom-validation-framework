@@ -24,6 +24,7 @@ class PacmanModel(Model):
         self.schedule = mesa.time.SimultaneousActivation(self)
         self.running = True
         self.grid = mesa.space.MultiGrid(13, 13, True)
+        self.episode_ended = False
         #define a dictionary with the mapping between cells and their corresponding terrain
 
         def map_terrains():
@@ -35,8 +36,8 @@ class PacmanModel(Model):
             # Define the slowing factors for each terrain type
             slowing_factors = {
                 "standard": 0,
-                "grass": 0.2,
-                "mud": 0.4
+                "grass": 0.8,
+                "mud": 0.9
             }
 
             # Create the dictionary to map grid locations to terrain types and slowing factors
@@ -58,7 +59,7 @@ class PacmanModel(Model):
 
         self.terrain_map = map_terrains()
 
-        walls_positions = [(6, 0),
+        self.walls_positions = [(6, 0),
                            (1, 1), (3, 1), (4, 1), (6, 1), (8, 1), (9, 1), (11, 1),
                            (1, 3), (3, 3), (5, 3), (6, 3), (7, 3), (9, 3), (11, 3),
                            (0, 5), (1, 5), (4, 5), (5, 5), (7, 5), (8, 5), (11, 5), (12, 5),
@@ -72,10 +73,10 @@ class PacmanModel(Model):
         self.schedule.add(pacman)
         x = self.random.randrange(self.grid.width)
         y = self.random.randrange(self.grid.height)
-        if (x, y) not in walls_positions:
+        if (x, y) not in self.walls_positions:
             self.grid.place_agent(pacman, (x, y))
         else:
-            while (x, y) in walls_positions:
+            while (x, y) in self.walls_positions:
                 x = self.random.randrange(self.grid.width)
                 y = self.random.randrange(self.grid.height)
             self.grid.place_agent(pacman, (x, y))
@@ -85,7 +86,7 @@ class PacmanModel(Model):
         for i in range(1, self.num_ghosts + 1):
 
             ghost = GhostAgent(i, self, 0.8, 0.95, 0.25, False,
-                               1, 100, [DataInclusionLogic.INCLUDE_HIGHER_VALUES,
+                               1, 100, [DataInclusionLogic.INCLUDE_LOWER_VALUES,
                                         DataInclusionLogic.INCLUDE_NOT_PRESENT_VALUES])
 
             self.schedule.add(ghost)
@@ -95,11 +96,11 @@ class PacmanModel(Model):
 
             self.grid.place_agent(ghost, (x, y))
 
-        for i in range(self.num_ghosts + 1, self.num_ghosts + 1 + len(walls_positions)):
+        for i in range(self.num_ghosts + 1, self.num_ghosts + 1 + len(self.walls_positions)):
             wall = WallAgent(i, self)
             self.schedule.add(wall)
-            x = walls_positions[i - self.num_ghosts - 1][0]
-            y = walls_positions[i - self.num_ghosts - 1][1]
+            x = self.walls_positions[i - self.num_ghosts - 1][0]
+            y = self.walls_positions[i - self.num_ghosts - 1][1]
             self.grid.place_agent(wall, (x, y))
 
         self.datacollector = mesa.DataCollector(
@@ -115,6 +116,36 @@ class PacmanModel(Model):
         self.datacollector.collect(self)
         self.schedule.step()
 
+    def end_episode(self):
+
+        self.episode_ended = True
+
+        x = self.random.randrange(self.grid.width)
+        y = self.random.randrange(self.grid.height)
+
+        if (x, y) not in model.walls_positions:
+            self.grid.move_agent(self.get_agents_of_type(PacmanAgent)[0], (x, y))
+        else:
+            while (x, y) in model.walls_positions:
+                x = self.random.randrange(self.grid.width)
+                y = self.random.randrange(self.grid.height)
+            self.grid.move_agent(self.get_agents_of_type(PacmanAgent)[0], (x, y))
+
+        for agent in self.schedule.agents:
+            if isinstance(agent, GhostAgent):
+                agent.init_agent()
+
+        '''
+        agent_counts = np.zeros((model.grid.width, model.grid.height))
+        for cell_content, (x, y) in model.grid.coord_iter():
+            agent_count = len(cell_content)
+            agent_counts[x][y] = agent_count
+
+        g = sns.heatmap(agent_counts.T, cmap="viridis", annot=True, cbar=False, square=True)
+        g.figure.set_size_inches(4, 4)
+        g.set(title="Number of agents on each cell of the grid")
+        plt.show()
+        '''
 
 if __name__ == '__main__':
 
@@ -130,28 +161,50 @@ if __name__ == '__main__':
     g.set(title="Number of agents on each cell of the grid")
     plt.show()
 
-    for i in range(10000000):
-        #every step corresponds to an episode in the q-learning task
-        model.step()
-        for agent in model.schedule.agents:
-            if isinstance(agent, GhostAgent):
-                model.grid.move_agent(agent, (6, 6))
-                agent.steps = 0
-            elif isinstance(agent, PacmanAgent):
-                model.grid.move_agent(agent, (model.random.randrange(model.grid.width), model.random.randrange(model.grid.height)))
+    num_episodes = 100000000
 
-        if i % 50 == 0 and i != 0:
+    steps_needed_per_episode = []
 
-            model.datacollector.collect(model)
+    for i in range(num_episodes):
 
-            agents_data = model.datacollector.get_agent_vars_dataframe().dropna()
+        model.episode_ended = False
 
-            g = sns.lineplot(data=agents_data, x="Step", y="Steps", hue="AgentID")
-            g.set(title="Steps over time - Time step " + str(i), ylabel="Steps")
+        print("Episode number: ", i)
+
+        count = 0
+
+        while not model.episode_ended:
+
+            print("Step number: ", count, " of episode number: ", i)
+
+            model.step()
+            '''
+            if count % 100000 == 0 and count != 0:
+
+                agent_counts = np.zeros((model.grid.width, model.grid.height))
+                for cell_content, (x, y) in model.grid.coord_iter():
+                    agent_count = len(cell_content)
+                    agent_counts[x][y] = agent_count
+
+                g = sns.heatmap(agent_counts.T, cmap="viridis", annot=True, cbar=False, square=True)
+                g.figure.set_size_inches(4, 4)
+                g.set(title="Number of agents on each cell of the grid")
+                plt.show()
+            '''
+            count += 1
+
+        steps_needed_per_episode.append(count)
+
+        print("Average number of steps needed per episode: ", np.mean(steps_needed_per_episode))
+
+        if i % 100 == 0 and i != 0:
+
+            g = sns.lineplot(data=steps_needed_per_episode)
+            g.set(title="Number of steps needed per episode", ylabel="Number of steps", xlabel="Episode number")
             plt.show()
 
-    agents_data = model.datacollector.get_agent_vars_dataframe()
-
-    g = sns.lineplot(data=agents_data, x="Step", y="Steps", hue="AgentID")
-    g.set(title="Steps over time - Last step ", ylabel="Steps")
+    g = sns.lineplot(data=steps_needed_per_episode, x=range(len(steps_needed_per_episode)), y=steps_needed_per_episode)
+    g.set(title="Number of steps needed per episode", ylabel="Number of steps", xlabel="Episode number")
     plt.show()
+
+
