@@ -66,6 +66,20 @@ class OnlineRegressionNN(OnlineRegression):
         loss = abs(sample["Rating"] - self.model.predict_one(x=x))
         return loss
 
+    def train_many(self, dataset):
+        X = dataset.drop(columns=['Rating'])
+        y = dataset['Rating']
+        self.model.learn_many(X, y)
+        losses = []
+        for index, row in dataset.iterrows():
+            x = {
+                'user': row['user'],
+                'item': row['item']
+            }
+            loss = abs(row['Rating'] - self.model.predict_one(x=x))
+            losses.append(loss)
+        return losses
+
 
     def evaluate(self, dataset):
         metric = metrics.MAE() + metrics.RMSE()
