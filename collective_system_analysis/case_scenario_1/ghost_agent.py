@@ -1,3 +1,4 @@
+import math
 from enum import Enum
 
 import mesa
@@ -16,10 +17,11 @@ class DataInclusionLogic(Enum):
 
 
 class GhostAgent(mesa.Agent):
-    def __init__(self, unique_id, model, learning_rate, discount_factor, exploration_rate, should_use_protocol,
+    def __init__(self, unique_id, model, initial_learning_rate, discount_factor, exploration_rate, should_use_protocol,
                  vicinity_radius, bandwidth, data_inclusion_logic):
         super().__init__(unique_id, model)
-        self.learning_rate = learning_rate
+        self.initial_learning_rate = initial_learning_rate
+        self.learning_rate = initial_learning_rate
         self.discount_factor = discount_factor
         self.exploration_rate = exploration_rate
         self.n_states = self.model.grid.width * self.model.grid.height
@@ -36,6 +38,7 @@ class GhostAgent(mesa.Agent):
         self.goal_state = self.goal_state[0] * self.model.grid.width + self.goal_state[1]
 
     def init_agent(self):
+        self.learning_rate = self.initial_learning_rate
         self.model.grid.move_agent(self, (6, 6))
         self.current_state = (6, 6)
         self.current_state = self.current_state[0] * self.model.grid.width + self.current_state[1]
@@ -43,6 +46,10 @@ class GhostAgent(mesa.Agent):
         return
 
     def step(self):
+
+        #learning rate decay
+        #if self.steps > 500:
+        #    self.learning_rate = self.learning_rate * math.exp(-0.01)
 
         self.goal_state = self.model.get_agents_of_type(PacmanAgent)[0].pos
         self.goal_state = self.goal_state[0] * self.model.grid.width + self.goal_state[1]
@@ -59,8 +66,8 @@ class GhostAgent(mesa.Agent):
 
             action = self.choose_action(self.current_state)
             next_state = self.move(action)
-            reward = self.get_reward(next_state)
             terrain_penalty_factor = self.model.get_terrain_penalty(self.current_state)
+            reward = self.get_reward(next_state, terrain_penalty_factor)
             self.update(self.current_state, action, reward, next_state, terrain_penalty_factor)
             self.current_state = next_state
             self.steps += 1
@@ -109,19 +116,19 @@ class GhostAgent(mesa.Agent):
 
         return move
 
-    def get_reward(self, state):
+    def get_reward(self, state, terrain_penalty_factor):
         goal_state = self.model.get_agents_of_type(PacmanAgent)[0].pos
         goal_state = goal_state[0] * self.model.grid.width + goal_state[1]
         if state == goal_state:
             return 1
         else:
-            return 1 / (abs(state - goal_state) + 1)
+            return 1 / (abs(state - goal_state) + 1) * (1 - terrain_penalty_factor)
 
     def update(self, state, action, reward, next_state, terrain_penalty):
         q_value = self.q_table[state, action]
         next_q_value = np.max(self.q_table[next_state])
         self.q_table[state, action] = (q_value + self.learning_rate *
-                                       (reward + self.discount_factor * next_q_value - q_value) * (1 - terrain_penalty))
+                                       (reward + self.discount_factor * next_q_value - q_value))# * (1 - terrain_penalty))
 
     def exchange_data(self, agent):
         data = []
@@ -154,7 +161,7 @@ class GhostAgent(mesa.Agent):
         def include_not_present_values(data):
             #include in the q_table the entries in data that are not present in the q_table
             for row in data:
-                if self.q_table[row['state'], row['action']] == 0:
+                if self.q_table[row['state'], row['action']] == 0.0:
                     self.q_table[row['state'], row['action']] = row['reward']
 
         for logic in self.data_inclusion_logic:

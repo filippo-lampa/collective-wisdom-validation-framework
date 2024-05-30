@@ -85,7 +85,7 @@ class PacmanModel(Model):
 
         for i in range(1, self.num_ghosts + 1):
 
-            ghost = GhostAgent(i, self, 0.8, 0.95, 0.25, False,
+            ghost = GhostAgent(i, self, 0.8, 0.95, 0.25, True,
                                1, 100, [DataInclusionLogic.INCLUDE_LOWER_VALUES,
                                         DataInclusionLogic.INCLUDE_NOT_PRESENT_VALUES])
 
@@ -200,7 +200,9 @@ if __name__ == '__main__':
         if i % 100 == 0 and i != 0:
 
             g = sns.lineplot(data=steps_needed_per_episode)
-            g.set(title="Number of steps needed per episode", ylabel="Number of steps", xlabel="Episode number")
+            #g.set(title="Number of steps needed per episode with protocol", ylabel="Number of steps", xlabel="Episode number")
+            g.set(title="Number of steps needed per episode without protocol", ylabel="Number of steps",
+                  xlabel="Episode number")
             plt.show()
 
     g = sns.lineplot(data=steps_needed_per_episode, x=range(len(steps_needed_per_episode)), y=steps_needed_per_episode)
