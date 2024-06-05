@@ -13,6 +13,9 @@ models/data/
 
 *.csv
 
+collective_system_analysis/case_scenario_2/plots/
+collective_system_analysis/case_scenario_1/plots/
+
 # User-specific stuff
 .idea/
 .idea/**/workspace.xml

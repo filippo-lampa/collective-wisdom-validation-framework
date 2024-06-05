@@ -12,11 +12,13 @@ from scipy.stats import entropy
 
 from sklearn.metrics.pairwise import cosine_similarity
 
+import pickle
 
 class DataSelectionLogic(Enum):
+    ORDERING_UNTOUCHED = 0,
     ORDERING_LOSS = 1,
     ORDERING_DATE = 2,
-    ORDERING_RANDOM = 3
+    RANDOM = 3
     CLUSTERING = 4
     LOSS_THRESHOLD = 5
 
@@ -28,32 +30,40 @@ class MemoryManagementLogic(Enum):
     MOST_RECENTLY_SENT = 4
     MOST_UNCERTAIN = 5
 
+
 class HotelAgent(mesa.Agent):
     def __init__(self, unique_id, model, regression_model, data, testing_data, nearby_agents_data_exchange_steps,
                  vicinity_radius, memory_size, model_eval_steps, bandwidth, maximum_time_steps_for_exchange,
                  testing_data_amount, starting_dataset_size, should_use_protocol, should_keep_data_ordered,
                  data_selection_logic, should_train_all_data, should_be_fixed_subset_exchange_percentage,
-                 subset_exchange_percentage, loss_threshold, memory_management_logic):
+                 subset_exchange_percentage, loss_threshold, memory_management_logic, resumed_dataset):
         super().__init__(unique_id, model)
 
         self.environment_dataset = data
         self.data_selection_logic = data_selection_logic
 
-        self.dataset = pd.DataFrame(columns=data.columns)
+        self.regression_model = regression_model
 
-        if data_selection_logic.name == DataSelectionLogic.ORDERING_LOSS.name:
-            self.dataset.insert(len(self.dataset.columns), 'loss', 0, True)
-        elif data_selection_logic.name == DataSelectionLogic.ORDERING_DATE.name:
-            self.dataset.insert(len(self.dataset.columns), 'date', 0, True)
+        if resumed_dataset is not None:
+            self.dataset = resumed_dataset
+        else:
+            self.dataset = pd.DataFrame(columns=data.columns, dtype=np.float64)
 
-        self.dataset = pd.concat([self.dataset, self.environment_dataset.iloc[:starting_dataset_size]], ignore_index=True)
+            if data_selection_logic.name == DataSelectionLogic.ORDERING_LOSS.name:
+                self.dataset.insert(len(self.dataset.columns), 'loss', 0, True)
+            elif data_selection_logic.name == DataSelectionLogic.ORDERING_DATE.name:
+                self.dataset.insert(len(self.dataset.columns), 'date', 0, True)
 
-        if memory_management_logic.name == MemoryManagementLogic.MOST_RECENTLY_SENT.name:
-            self.dataset.insert(len(self.dataset.columns), 'date_sent', 0, True)
+
+            if starting_dataset_size > 0:
+                self.dataset = pd.concat([self.dataset, self.environment_dataset.iloc[:starting_dataset_size]], ignore_index=True)
+                self.regression_model.train_many(self.environment_dataset.iloc[:starting_dataset_size])
+
+            if memory_management_logic.name == MemoryManagementLogic.MOST_RECENTLY_SENT.name:
+                self.dataset.insert(len(self.dataset.columns), 'date_sent', 0, True)
 
         self.should_train_all_data = should_train_all_data
         self.testing_data = testing_data
-        self.regression_model = regression_model
         self.nearby_agents_data_exchange_steps = nearby_agents_data_exchange_steps
         self.vicinity_radius = vicinity_radius
         self.memory_size = memory_size
@@ -69,7 +79,6 @@ class HotelAgent(mesa.Agent):
         self.memory_management_logic = memory_management_logic
         self.mae = 0
         self.rmse = 0
-        self.accuracy = 0
 
     def train_whole_network(self):
         '''
@@ -79,20 +88,18 @@ class HotelAgent(mesa.Agent):
         self.environment_dataset.reset_index(drop=True, inplace=True)
         mae_list = []
         rmse_list = []
-        accuracy_list = []
 
         for index, row in self.environment_dataset.iterrows():
             print("Training row number: ", index, " out of ", len(self.environment_dataset))
             self.regression_model.train(row)
             if index % self.model_eval_steps == 0 and index != 0:
-                mae, rmse, self.accuracy = self.regression_model.evaluate(
+                mae, rmse = self.regression_model.evaluate(
                     self.testing_data.sample(self.testing_data_amount, random_state=42))
-                mae_list.append(mae.get())
-                rmse_list.append(rmse.get())
-                accuracy_list.append(self.accuracy)
-                self.mae = mae.get()
-                self.rmse = rmse.get()
-                print(self.mae, self.rmse, self.accuracy)
+                mae_list.append(mae)
+                rmse_list.append(rmse)
+                self.mae = mae
+                self.rmse = rmse
+                print(self.mae, self.rmse)
 
                 g = sns.lineplot(data=mae_list)
                 g.set(title="MAE over time - Time step ", ylabel="MAE")
@@ -102,17 +109,12 @@ class HotelAgent(mesa.Agent):
                 g.set(title="RMSE data over time - Time step ", ylabel="RMSE")
                 plt.show()
 
-                g = sns.lineplot(data=accuracy_list)
-                g.set(title="Accuracy data over time - Time step ", ylabel="Accuracy")
-                plt.show()
-
-        self.mae, self.rmse, self.accuracy = self.regression_model.evaluate(
+        self.mae, self.rmse = self.regression_model.evaluate(
         self.testing_data.sample(self.testing_data_amount, random_state=42))
-        print(self.mae, self.rmse, self.accuracy)
+        print(self.mae, self.rmse)
 
         mae_list.append(self.mae)
         rmse_list.append(self.rmse)
-        accuracy_list.append(self.accuracy)
 
         g = sns.lineplot(data=mae_list)
         g.set(title="MAE over time - Time step ", ylabel="MAE")
@@ -132,22 +134,22 @@ class HotelAgent(mesa.Agent):
             print("Hotel {} step number {}".format(self.unique_id, self.model.schedule.steps), "Dataset size: ", len(self.dataset))
             if self.model.schedule.steps % self.model_eval_steps == 0 and self.model.schedule.steps != 0:
                 print("Hotel {} evaluation:".format(self.unique_id))
-                mae, rmse, accuracy = self.regression_model.evaluate(self.testing_data.sample(self.testing_data_amount, random_state=42))
-                print("Hotel {} MAE: {}".format(self.unique_id, mae.get()))
-                print("Hotel {} RMSE: {}".format(self.unique_id, rmse.get()))
-                print("Hotel {} Accuracy: {}".format(self.unique_id, accuracy))
-                self.mae = mae.get()
-                self.rmse = rmse.get()
-                self.accuracy = accuracy
+                mae, rmse = self.regression_model.evaluate(self.testing_data.sample(self.testing_data_amount, random_state=42))
+                print("Hotel {} MAE: {}".format(self.unique_id, mae))
+                print("Hotel {} RMSE: {}".format(self.unique_id, rmse))
+                self.mae = mae
+                self.rmse = rmse
             if self.should_use_protocol:
                 nearby_agents = self.model.grid.get_neighbors(self.pos, include_center=False, radius=self.vicinity_radius, moore=True)
-                print("Hotel {} nearby agents: {}".format(self.unique_id, [agent.unique_id for agent in nearby_agents]))
+                print("Hotel {} nearby hotels: {}".format(self.unique_id, [agent.unique_id for agent in nearby_agents
+                                                                           if isinstance(agent, HotelAgent)]))
                 if self.model.schedule.steps % self.nearby_agents_data_exchange_steps == 0:
                     for agent in nearby_agents:
                         if isinstance(agent, HotelAgent):
                             self.exchange_data(agent)
 
     def collect_data(self):
+
         #get data from the environment (next data from the environment dataset)
         data = self.environment_dataset.iloc[0]
         if len(self.dataset) + 1 > self.memory_size:
@@ -172,6 +174,8 @@ class HotelAgent(mesa.Agent):
         if len(self.dataset) <= 1:
             return
         data_to_send = self.select_data_to_send()
+        if len(data_to_send) == 0:
+            return
         if self.memory_management_logic.name == MemoryManagementLogic.MOST_RECENTLY_SENT.name:
             data_to_send['date_sent'] = self.model.schedule.steps
         print("Hotel {} sent data to hotel {}".format(self.unique_id, agent.unique_id))
@@ -183,18 +187,18 @@ class HotelAgent(mesa.Agent):
         '''
         def select_first_entries():
             if self.should_be_fixed_subset_exchange_percentage:
-                return self.dataset.iloc[:len(self.dataset) * self.subset_exchange_percentage]
+                return self.dataset.iloc[:round(len(self.dataset) * self.subset_exchange_percentage)]
             return self.dataset.iloc[:self.bandwidth if len(self.dataset) >= self.bandwidth else len(self.dataset)]
 
         def select_last_entries():
             if self.should_be_fixed_subset_exchange_percentage:
-                return self.dataset.iloc[-len(self.dataset) * self.subset_exchange_percentage:]
+                return self.dataset.iloc[-round(len(self.dataset) * self.subset_exchange_percentage):]
             return self.dataset.iloc[-self.bandwidth if len(self.dataset) >= self.bandwidth else len(self.dataset)]
 
         def select_random_entries():
             if self.should_be_fixed_subset_exchange_percentage:
-                return self.dataset.sample(len(self.dataset) * self.subset_exchange_percentage)
-            return self.dataset.sample(self.bandwidth)
+                return self.dataset.sample(round(len(self.dataset) * self.subset_exchange_percentage))
+            return self.dataset.sample(self.bandwidth) if len(self.dataset) >= self.bandwidth else self.dataset
 
         def select_clustered_entries():
             '''
@@ -216,17 +220,49 @@ class HotelAgent(mesa.Agent):
             return select_first_entries()
         if self.data_selection_logic.name == DataSelectionLogic.ORDERING_DATE.name:
             return select_last_entries()
-        if self.data_selection_logic.name == DataSelectionLogic.ORDERING_RANDOM.name:
+        if self.data_selection_logic.name == DataSelectionLogic.RANDOM.name:
             return select_random_entries()
         if self.data_selection_logic.name == DataSelectionLogic.CLUSTERING.name:
             return select_clustered_entries()
         if self.data_selection_logic.name == DataSelectionLogic.LOSS_THRESHOLD.name:
             return select_loss_threshold_entries()
+        if self.data_selection_logic.name == DataSelectionLogic.ORDERING_UNTOUCHED.name:
+            return select_first_entries()
 
     def get_data_from_exchange(self, data):
         '''
         Define here the logic for the agent to receive data from another agent.
         '''
+
+        #remove entries from data if they are already present in the dataset
+
+        '''
+        indexes_to_remove = []
+        for index, row in data.iterrows():
+            for index_dataset, row_dataset in self.dataset.iterrows():
+                if row['user'] == row_dataset['user'] and row['item'] == row_dataset['item']:
+                    indexes_to_remove.append(index)
+                    break
+        '''
+        '''
+        # Create a set of (user, item) tuples for fast lookup
+        dataset_tuples = set(zip(self.dataset['user'], self.dataset['item']))
+
+        # Find indexes to remove by checking if (user, item) tuple exists in the set
+        indexes_to_remove = [index for index, row in data.iterrows() if (row['user'], row['item']) in dataset_tuples]
+
+        data = data.drop(indexes_to_remove)
+        '''
+
+        data.reset_index(drop=True, inplace=True)
+        merged = pd.merge(data, self.dataset, on=['user', 'item'], how='left', indicator='Exist')
+        #merged = merged.drop('Rating', inplace=True, axis=1)
+        merged['Exist'] = np.where(merged.Exist == 'both', True, False)
+        data = merged[merged['Exist'] == False].drop(columns=['Exist']).rename(columns={'Rating_x': 'Rating'}).filter(items=['user', 'item', 'Rating'])
+
+        if len(data) == 0:
+            return
+
         if len(self.dataset) + len(data) > self.memory_size:
             self.manage_memory(data)
 
@@ -235,15 +271,13 @@ class HotelAgent(mesa.Agent):
             data.reset_index(drop=True, inplace=True)
             if self.data_selection_logic.name == DataSelectionLogic.ORDERING_LOSS.name:
                 losses = self.regression_model.train_many(data)
-                for index, row in data.iterrows():
-                    row['loss'] = losses[index]
+                data['loss'] = losses
                 self.dataset = pd.concat([self.dataset, data], ignore_index=True)
                 self.dataset.sort_values(by='loss', inplace=True)
                 print("Hotel {} received data".format(self.unique_id))
                 return
             if self.data_selection_logic.name == DataSelectionLogic.ORDERING_DATE.name:
-                for index, row in data.iterrows():
-                    row['date'] = self.model.schedule.steps
+                data['date'] = self.model.schedule.steps
                 self.dataset = pd.concat([self.dataset, data], ignore_index=True)
                 self.dataset.sort_values(by='date', inplace=True)
                 self.regression_model.train_many(data)
@@ -363,5 +397,16 @@ class HotelAgent(mesa.Agent):
             self.dataset = self.dataset.iloc[space_to_free:]
             self.dataset.reset_index(drop=True, inplace=True)
             return
+
+    def save_model(self):
+        with open('running_agents_models/agent_{}_model.pkl'.format(self.unique_id), 'wb') as f:
+            pickle.dump(self.regression_model, f)
+
+        with open('running_agents_datasets/hotel_agent_dataset_{}.pkl'.format(self.unique_id), 'wb') as f:
+            pickle.dump(self.dataset, f)
+
+        print("Hotel {} saved model".format(self.unique_id))
+
+
 
 

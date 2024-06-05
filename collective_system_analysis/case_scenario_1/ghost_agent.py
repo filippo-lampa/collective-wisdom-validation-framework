@@ -10,6 +10,7 @@ import matplotlib.pyplot as plt
 from wall_agent import WallAgent
 from pacman_agent import PacmanAgent
 
+
 class DataInclusionLogic(Enum):
     INCLUDE_HIGHER_VALUES = 1
     INCLUDE_LOWER_VALUES = 2
@@ -18,7 +19,7 @@ class DataInclusionLogic(Enum):
 
 class GhostAgent(mesa.Agent):
     def __init__(self, unique_id, model, initial_learning_rate, discount_factor, exploration_rate, should_use_protocol,
-                 vicinity_radius, bandwidth, data_inclusion_logic):
+                 vicinity_radius, bandwidth, data_inclusion_logic, learning_rate_decay):
         super().__init__(unique_id, model)
         self.initial_learning_rate = initial_learning_rate
         self.learning_rate = initial_learning_rate
@@ -36,6 +37,7 @@ class GhostAgent(mesa.Agent):
         self.current_state = self.current_state[0] * self.model.grid.width + self.current_state[1]
         self.goal_state = self.model.get_agents_of_type(PacmanAgent)[0].pos
         self.goal_state = self.goal_state[0] * self.model.grid.width + self.goal_state[1]
+        self.learning_rate_decay = learning_rate_decay
 
     def init_agent(self):
         self.learning_rate = self.initial_learning_rate
@@ -49,7 +51,7 @@ class GhostAgent(mesa.Agent):
 
         #learning rate decay
         #if self.steps > 500:
-        #    self.learning_rate = self.learning_rate * math.exp(-0.01)
+        #    self.learning_rate = self.learning_rate * math.exp(-self.learning_rate_decay)
 
         self.goal_state = self.model.get_agents_of_type(PacmanAgent)[0].pos
         self.goal_state = self.goal_state[0] * self.model.grid.width + self.goal_state[1]

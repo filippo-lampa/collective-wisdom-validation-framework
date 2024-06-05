@@ -6,6 +6,8 @@ When agents meet, they exchange subsets of their data, allowing each agent to ac
 has not directly explored. The overall goal is to ensure that each ghost has complete knowledge of all sub-environments
 to maximize the chances of catching Pacman.
 '''
+import os
+
 import mesa
 import numpy as np
 import seaborn as sns
@@ -87,7 +89,7 @@ class PacmanModel(Model):
 
             ghost = GhostAgent(i, self, 0.8, 0.95, 0.25, True,
                                1, 100, [DataInclusionLogic.INCLUDE_LOWER_VALUES,
-                                        DataInclusionLogic.INCLUDE_NOT_PRESENT_VALUES])
+                                        DataInclusionLogic.INCLUDE_NOT_PRESENT_VALUES], 0)
 
             self.schedule.add(ghost)
 
@@ -165,6 +167,9 @@ if __name__ == '__main__':
 
     steps_needed_per_episode = []
 
+    if not os.path.exists('plots'):
+        os.makedirs('plots')
+
     for i in range(num_episodes):
 
         model.episode_ended = False
@@ -203,10 +208,12 @@ if __name__ == '__main__':
             #g.set(title="Number of steps needed per episode with protocol", ylabel="Number of steps", xlabel="Episode number")
             g.set(title="Number of steps needed per episode without protocol", ylabel="Number of steps",
                   xlabel="Episode number")
+            plt.savefig(os.path.join(os.getcwd(), 'plots', 'steps_needed_per_episode.png'))
             plt.show()
 
     g = sns.lineplot(data=steps_needed_per_episode, x=range(len(steps_needed_per_episode)), y=steps_needed_per_episode)
     g.set(title="Number of steps needed per episode", ylabel="Number of steps", xlabel="Episode number")
+    plt.savefig(os.path.join(os.getcwd(), 'plots', 'steps_needed_per_episode.png'))
     plt.show()
 
 

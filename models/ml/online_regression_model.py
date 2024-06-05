@@ -44,6 +44,7 @@ from river import metrics, datasets
 from river.evaluate import progressive_val_score, iter_progressive_val_score
 
 from models.online_regression import OnlineRegression
+import copy
 
 
 class OnlineRegressionModel(OnlineRegression):
@@ -51,6 +52,7 @@ class OnlineRegressionModel(OnlineRegression):
         super().__init__(model, model_name)
 
     def train(self, sample):
+
         x = {
             'user': sample['user'],
             'item': sample['item']
@@ -59,8 +61,17 @@ class OnlineRegressionModel(OnlineRegression):
         loss = abs(sample["Rating"] - self.model.predict_one(user=sample['user'], item=sample['item'], x=x))
         return loss
 
+    def train_many(self, sample):
+        """
+        Wrapper class to avoid creating an overly complex hotel agent class.
+        """
+        losses = []
+        for index, row in sample.iterrows():
+            loss = self.train(row)
+            losses.append(loss)
+        return losses
 
-    def evaluate(self, dataset):
+    def evaluate_progressive(self, dataset):
         metric = metrics.MAE() + metrics.RMSE()
         x_y = []
         correct_predictions = 0
@@ -71,8 +82,10 @@ class OnlineRegressionModel(OnlineRegression):
             }
             y = row['Rating']
             x_y.append((x, y))
+            '''
             prediction = self.model.predict_one(user=x['user'], item=x['item'], x=x)
             if int(prediction) == y:
                 correct_predictions += 1
-        score = progressive_val_score(x_y, model=self.model, metric=metric)
-        return score.data[0], score.data[1], correct_predictions / len(dataset)
+            '''
+        score = progressive_val_score(x_y, model=self.model, metric=metric, delay=1000)
+        return score.data[0], score.data[1]
