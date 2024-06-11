@@ -36,9 +36,11 @@ import matplotlib.pyplot as plt
 
 import pickle
 
+
 class RecommendationSystemModel(mesa.Model):
 
-    def __init__(self, width, height, n_hotels, n_customers, load_existing_data, stratified_users, eval_steps, should_resume):
+    def __init__(self, width, height, n_hotels, n_customers, load_existing_data, stratified_users, eval_steps, should_resume,
+                 approach):
         super().__init__()
         self.num_hotels = n_hotels
         self.num_customers = n_customers
@@ -48,6 +50,7 @@ class RecommendationSystemModel(mesa.Model):
         self.stratified_users = stratified_users
         self.eval_steps = eval_steps
         self.should_resume = should_resume
+        self.approach = approach
 
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
         torch.set_default_device(torch.device(device))
@@ -66,15 +69,15 @@ class RecommendationSystemModel(mesa.Model):
 
         biased_mf_params = {
             'n_factors': 5,
-            'bias_optimizer': optim.SGD(0.025),
-            'latent_optimizer': optim.SGD(0.05),
+            'bias_optimizer': optim.SGD(0.0025),
+            'latent_optimizer': optim.SGD(0.005),
             'weight_initializer': optim.initializers.Zeros(),
             'latent_initializer': optim.initializers.Normal(mu=0., sigma=0.1, seed=73),
             'l2_bias': 0.,
             'l2_latent': 0.
         }
 
-        class MyModule(nn.Module):
+        class RecommendationNN(nn.Module):
             '''
             Recommendation neural network model based on collaborative filtering.
             '''
@@ -91,9 +94,9 @@ class RecommendationSystemModel(mesa.Model):
 
             def __init__(self, n_features):
                 super().__init__()
-                self.user_embedding = nn.Embedding(480190, 50)
-                self.item_embedding = nn.Embedding(17771, 50)
-                self.fc1 = nn.Linear(50, 1)
+                self.user_embedding = nn.Embedding(480190, 128)
+                self.item_embedding = nn.Embedding(17771, 128)
+                self.fc1 = nn.Linear(128, 1)
 
             def forward(self, X, **kwargs):
 
@@ -122,33 +125,26 @@ class RecommendationSystemModel(mesa.Model):
 
         for i in range(self.num_hotels):
 
-            '''
-            regression_model = Regressor(
-                module=MyModule,
-                    loss_fn=nn.L1Loss(),
-                    optimizer_fn='adam',
-                    lr=1e-3,
-                    device=device
-            )
-            '''
+            if self.approach == 'nn':
+                regression_model = Regressor(
+                    module=RecommendationNN,
+                        loss_fn=nn.L1Loss(),
+                        optimizer_fn='adam',
+                        lr=1e-4,
+                        device=device
+                )
+                agent_online_regression_model = OnlineRegressionNN(regression_model, 'agent_{}_model'.format(i))
 
-            regression_model = preprocessing.PredClipper(
-                regressor=reco.BiasedMF(**biased_mf_params),
-                y_min=1,
-                y_max=5
-            )
+            elif self.approach == 'ml':
+
+                regression_model = preprocessing.PredClipper(
+                    regressor=reco.BiasedMF(**biased_mf_params),
+                    y_min=1,
+                    y_max=5
+                )
+                agent_online_regression_model = OnlineRegressionModel(regression_model, 'agent_{}_model'.format(i))
 
             agent_data = agent_data_mapping[i]
-
-            # Initialize the online regression model with the starting data (a subset of the whole dataset), and the
-            # hotel agent with all the data that will be fed to the model from the environment as the agent interacts
-            # with it to simulate the recommendation system.
-
-            #agent_online_regression_model = OnlineRegressionNN(regression_model, 'agent_{}_model'.format(i))
-            agent_online_regression_model = OnlineRegressionModel(regression_model, 'agent_{}_model'.format(i))
-
-            # Note: the flow of data into and out of the memory should be faster than the ratio of data exchange with
-            # the other agents to avoid overly redundant data
 
             agent_dataset = None
 
@@ -157,18 +153,29 @@ class RecommendationSystemModel(mesa.Model):
                 assert os.path.exists('running_agents_models/agent_{}_model.pkl'.format(i)), "Model file not found"
                 assert os.path.exists('running_agents_datasets/hotel_agent_dataset_{}.pkl'.format(i)), "Dataset file not found"
 
-                with open('running_agents_models/agent_{}_model.pkl'.format(i), 'rb') as f:
-                    agent_online_regression_model = pickle.load(f)
+                if self.approach == 'ml':
+                    with open('running_agents_models/agent_{}_model.pkl'.format(i), 'rb') as f:
+                        agent_online_regression_model = pickle.load(f)
+                else:
+                    agent_online_regression_model = OnlineRegressionNN(regression_model, 'agent_{}_model'.format(i),
+                                                                       True, i)
 
-                    with open('running_agents_datasets/hotel_agent_dataset_{}.pkl'.format(i), 'rb') as f:
-                        agent_dataset = pickle.load(f)
+                with open('running_agents_datasets/hotel_agent_dataset_{}.pkl'.format(i), 'rb') as f:
+                    agent_dataset = pickle.load(f)
+
+            # Initialize the online regression model with the starting data (a subset of the whole dataset), and the
+            # hotel agent with all the data that will be fed to the model from the environment as the agent interacts
+            # with it to simulate the recommendation system.
+
+            # Note: the flow of data into and out of the memory should be faster than the ratio of data exchange with
+            # the other agents to avoid overly redundant data
 
             a = HotelAgent(i, self, agent_online_regression_model, agent_data, testing_data,
                            1, 2, 1000, self.eval_steps,
-                           1000, 100000, 10000, 0,
-                           False, True, DataSelectionLogic.ORDERING_LOSS,
+                           1000, 100000, 1000, 0,
+                           True, False, DataSelectionLogic.ORDERING_LOSS,
                            False, False, 0.2,
-                           3, MemoryManagementLogic.FIFO, agent_dataset)
+                           3, MemoryManagementLogic.FIFO, agent_dataset, True)
 
             self.schedule.add(a)
 
@@ -185,21 +192,6 @@ class RecommendationSystemModel(mesa.Model):
             x = self.random.randrange(self.grid.width)
             y = self.random.randrange(self.grid.height)
             self.grid.place_agent(c, (x, y))
-
-        '''
-        if self.should_resume:
-            self.datacollector = mesa.DataCollector(
-                agent_reporters={"MAE": "mae", "RMSE": "rmse"},
-                tables={"agents_stats": pd.DataFrame(columns=["AgentID", "MAE", "RMSE"])}
-            )
-            with open('running_agents_stats/agents_stats.pkl', 'rb') as f:
-                agents_stats = pickle.load(f)
-                self.datacollector.tables['agents_stats'] = agents_stats
-        else:
-            self.datacollector = mesa.DataCollector(
-                agent_reporters={"MAE": "mae", "RMSE": "rmse"},
-            )
-        '''
 
         self.datacollector = mesa.DataCollector(
             agent_reporters={"MAE": "mae", "RMSE": "rmse"},
@@ -260,6 +252,8 @@ class RecommendationSystemModel(mesa.Model):
 
             df.to_csv('dataset.csv', index=False)
             return df
+
+        print("Loading dataset")
 
         if not os.path.exists('dataset.csv') or not self.load_existing_data:
             dataset = prepare_dataset()
@@ -350,12 +344,15 @@ class RecommendationSystemModel(mesa.Model):
 if __name__ == '__main__':
 
     simulation_steps = 100000000
-    simulation_eval_steps = 20000
-    simulation_save_steps = 40000
-    should_resume = True
+    simulation_eval_steps = 10000
+    simulation_save_steps = 20000
+    simulation_plot_steps = 20000
+    should_resume = False
+    plots_name = 'max protocol loss'
+    approach = 'nn'
 
     model = RecommendationSystemModel(10, 10, 5, 10, True, False,
-                                      simulation_eval_steps, should_resume)
+                                      simulation_eval_steps, should_resume, approach)
 
     agent_counts = np.zeros((model.grid.width, model.grid.height))
     for cell_content, (x, y) in model.grid.coord_iter():
@@ -370,7 +367,10 @@ if __name__ == '__main__':
     if not os.path.exists('plots'):
         os.makedirs('plots')
 
+    resumed_number_of_steps = 0
+
     if should_resume:
+        print("Resuming simulation")
         resumed_agents_data = pickle.load(open('running_agents_stats/agents_stats.pkl', 'rb'))
         resumed_number_of_steps = resumed_agents_data['MAE'].size
         #drop rows where mae is 0.0
@@ -378,17 +378,26 @@ if __name__ == '__main__':
 
     number_of_steps = simulation_steps if not should_resume else simulation_steps - resumed_number_of_steps
 
-    model.schedule.steps = resumed_number_of_steps
+    if should_resume:
+        model.schedule.steps = resumed_number_of_steps
+
+        agents_data = model.datacollector.get_agent_vars_dataframe().dropna()
+        g = sns.lineplot(data=resumed_agents_data, x="Step", y="MAE", hue="AgentID")
+        g.set(title="{}: MAE over time - Time step ".format(plots_name) + str(resumed_number_of_steps), ylabel="MAE")
+        plt.savefig(os.path.join(os.getcwd(), 'plots', 'MAE.png'))
+        plt.show()
+        g = sns.lineplot(data=resumed_agents_data, x="Step", y="RMSE", hue="AgentID")
+        g.set(title="{}: RMSE data over time - Time step ".format(plots_name) + str(resumed_number_of_steps), ylabel="RMSE")
+        plt.savefig(os.path.join(os.getcwd(), 'plots', 'RMSE.png'))
+        plt.show()
 
     for i in range(number_of_steps):
         model.step()
 
-        #check if the prediction model is the same in all the agents
-
         if i % simulation_save_steps == 0 and i != 0:
             model.save_model(model.datacollector.get_agent_vars_dataframe().dropna())
 
-        if i % simulation_eval_steps == 0 and i != 0:
+        if i % simulation_plot_steps == 0 and i != 0:
 
             model.datacollector.collect(model)
 
@@ -402,7 +411,7 @@ if __name__ == '__main__':
                 g = sns.lineplot(data=complete_agents_data, x="Step", y="MAE", hue="AgentID")
             else:
                 g = sns.lineplot(data=agents_data, x="Step", y="MAE", hue="AgentID")
-            g.set(title="2: MAE over time - Time step " + str(i), ylabel="MAE")
+            g.set(title="{}: MAE over time - Time step ".format(plots_name) + str(i), ylabel="MAE")
             plt.savefig(os.path.join(os.getcwd(), 'plots', 'MAE.png'))
             plt.show()
 
@@ -410,15 +419,9 @@ if __name__ == '__main__':
                 g = sns.lineplot(data=complete_agents_data, x="Step", y="RMSE", hue="AgentID")
             else:
                 g = sns.lineplot(data=agents_data, x="Step", y="RMSE", hue="AgentID")
-            g.set(title="2: RMSE data over time - Time step " + str(i), ylabel="RMSE")
+            g.set(title="{}: RMSE data over time - Time step ".format(plots_name) + str(i), ylabel="RMSE")
             plt.savefig(os.path.join(os.getcwd(), 'plots', 'RMSE.png'))
             plt.show()
-
-
-    #model_data = model.datacollector.get_model_vars_dataframe()
-
-    #g = sns.lineplot(data=model_data)
-    #g.set(title="Model data over Time", ylabel="Model Data")
 
     agents_data = model.datacollector.get_agent_vars_dataframe()
 
@@ -427,7 +430,7 @@ if __name__ == '__main__':
         g = sns.lineplot(data=complete_agents_data, x="Step", y="MAE", hue="AgentID")
     else:
         g = sns.lineplot(data=agents_data, x="Step", y="MAE", hue="AgentID")
-    g.set(title="MAE over time - Last step ", ylabel="MAE")
+    g.set(title="{}: MAE over time - Last step ".format(plots_name), ylabel="MAE")
     plt.savefig(os.path.join(os.getcwd(), 'plots', 'MAE.png'))
     plt.show()
 
@@ -435,7 +438,7 @@ if __name__ == '__main__':
         g = sns.lineplot(data=complete_agents_data, x="Step", y="RMSE", hue="AgentID")
     else:
         g = sns.lineplot(data=agents_data, x="Step", y="RMSE", hue="AgentID")
-    g.set(title="RMSE data over time - Last step ", ylabel="RMSE")
+    g.set(title="{}: RMSE data over time - Last step ".format(plots_name), ylabel="RMSE")
     plt.savefig(os.path.join(os.getcwd(), 'plots', 'RMSE.png'))
     plt.show()
 

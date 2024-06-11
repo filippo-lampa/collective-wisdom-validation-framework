@@ -32,7 +32,7 @@ class OnlineRegression(ABC):
                 'user': row['user'],
                 'item': row['item']
             }
-            predictions.append(self.model.predict_one(x=x, user=x['user'], item=x['item']))
+            predictions.append(self.model.predict_one(x=x))
         mae = mean_absolute_error(evaluation_set['Rating'], predictions)
         rmse = math.sqrt(mean_squared_error(evaluation_set['Rating'], predictions))
         return mae, rmse

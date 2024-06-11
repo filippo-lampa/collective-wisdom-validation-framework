@@ -39,7 +39,7 @@ The types of incremental learning we are interested in are domain incremental le
 Domain incremental learning means new instances of data can be added to the dataset, while class incremental learning
 means new classes can be added to the dataset.
 '''
-
+import torch
 from river import datasets
 from river import evaluate
 #from river import neural_net as nn
@@ -54,8 +54,11 @@ from models.online_regression import OnlineRegression
 
 class OnlineRegressionNN(OnlineRegression):
 
-    def __init__(self, model, model_name):
+    def __init__(self, model, model_name, should_resume=False, resumed_model_id=None):
         super().__init__(model, model_name)
+        self.should_resume = should_resume
+        self.model_resumed = False  # needed given the lazy loading of the model
+        self.resumed_model_id = resumed_model_id
 
     def train(self, sample):
         x = {
@@ -63,13 +66,24 @@ class OnlineRegressionNN(OnlineRegression):
             'item': sample['item']
         }
         self.model.learn_one(x=x, y=sample["Rating"])
+        if self.should_resume and not self.model_resumed:
+            # needed given the lazy loading of the model only when the first sample is being processed
+#            self.model.learn_one(x=x, y=sample["Rating"])
+            self.model_resumed = True
+            self.resume_model()
         loss = abs(sample["Rating"] - self.model.predict_one(x=x))
+
         return loss
 
     def train_many(self, dataset):
         X = dataset.drop(columns=['Rating'])
         y = dataset['Rating']
         self.model.learn_many(X, y)
+        if self.should_resume and not self.model_resumed:
+            # needed given the lazy loading of the model only when the first sample is being processed
+#            self.model.learn_one(x=X.iloc[0], y=y.iloc[0])
+            self.model_resumed = True
+            self.resume_model()
         losses = []
         for index, row in dataset.iterrows():
             x = {
@@ -78,12 +92,19 @@ class OnlineRegressionNN(OnlineRegression):
             }
             loss = abs(row['Rating'] - self.model.predict_one(x=x))
             losses.append(loss)
+
         return losses
+
+    def resume_model(self):
+        with open('running_agents_models/agent_{}_model.pt'.format(self.resumed_model_id), 'rb') as f:
+            checkpoint = torch.load(f)
+            self.model.module.load_state_dict(checkpoint['model'])
+            self.model.optimizer.load_state_dict(checkpoint['optimizer'])
 
     def evaluate_progressive(self, dataset):
         metric = metrics.MAE() + metrics.RMSE()
         x_y = []
-        correct_predictions = 0
+        #correct_predictions = 0
         for index, row in dataset.iterrows():
             x = {
                 'user': row['user'],
