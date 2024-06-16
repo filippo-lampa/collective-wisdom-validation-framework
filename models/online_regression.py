@@ -25,14 +25,17 @@ class OnlineRegression(ABC):
             self.model.predict_one({x: y})
         return self.model.predict_one({x: y})
 
-    def evaluate(self, evaluation_set):
+    def evaluate(self, evaluation_set, model_type):
         predictions = []
         for index, row in evaluation_set.iterrows():
             x = {
                 'user': row['user'],
                 'item': row['item']
             }
-            predictions.append(self.model.predict_one(x=x))
+            if model_type == 'nn':
+                predictions.append(self.model.predict_one(x=x))
+            elif model_type == 'ml':
+                predictions.append(self.model.predict_one(user=x['user'], item=x['item'], x=x))
         mae = mean_absolute_error(evaluation_set['Rating'], predictions)
         rmse = math.sqrt(mean_squared_error(evaluation_set['Rating'], predictions))
         return mae, rmse

@@ -5,3 +5,4 @@ numpy >= 1.26.0
 #torch >= 2.3.0
 deep-river >= 0.2.6
 river >= 0.21.1
+torchviz >= 0.0.2

@@ -12,23 +12,25 @@ import torch
 from scipy.stats import entropy
 
 from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.neighbors import NearestNeighbors
 
 import pickle
 
+from models.dl.online_regression_nn import OnlineRegressionNN
 from models.ml.online_regression_model import OnlineRegressionModel
 
 
 class DataSelectionLogic(Enum):
     #EXPECTED RANKING:
 
-    #ORDERING_UNTOUCHED_LAST-FIFO
-    #ORDERING_LOSS-MOST_UNCERTAIN
-    #ORDERING_LOSS-ENTROPY / ORDERING_LOSS-NEAREST_NEIGHBORS
-    #ORDERING_LOSS-FIFO / ORDERING_LOSS-MOST_RECENTLY_SENT
-    #ORDERING_UNTOUCHED_LAST-ENTROPY / ORDERING_UNTOUCHED_LAST-NEAREST_NEIGHBORS
+    #ORDERING_UNTOUCHED_LAST-FIFO done
+    #ORDERING_LOSS-MOST_UNCERTAIN done
+    #ORDERING_LOSS-ENTROPY done / ORDERING_LOSS-NEAREST_NEIGHBORS done
+    #ORDERING_LOSS-FIFO done / ORDERING_LOSS-MOST_RECENTLY_SENT (not necessary)
+    #ORDERING_UNTOUCHED_LAST-ENTROPY done/ ORDERING_UNTOUCHED_LAST-NEAREST_NEIGHBORS done
     #ORDERING_UNTOUCHED_FIRST-ENTROPY / ORDERING_UNTOUCHED_FIRST-NEAREST_NEIGHBORS
     #ORDERING_RANDOM-ENTROPY / ORDERING_RANDOM-NEAREST_NEIGHBORS
-    #ORDERING_RANDOM-FIFO
+    #ORDERING_RANDOM-FIFO done
     #ORDERING_RANDOM-MOST_RECENTLY_SENT
     #ORDERING_CLUSTERING-MOST_RECENTLY_SENT
     #ORDERING_CLUSTERING-FIFO
@@ -36,7 +38,7 @@ class DataSelectionLogic(Enum):
     #ORDERING_CLUSTERING-ENTROPY
     #ORDERING_UNTOUCHED_LAST-MOST_RECENTLY_SENT
     #ORDERING_UNTOUCHED_FIRST-MOST_RECENTLY_SENT
-    #ORDERING_UNTOUCHED_FIRST-FIFO
+    #ORDERING_UNTOUCHED_FIRST-FIFO to do
 
 
     # If we choose the first entries it is FIFO, the first data points to be collected are the first to be sent.
@@ -159,6 +161,7 @@ class HotelAgent(mesa.Agent):
         self.loss_threshold = loss_threshold
         self.memory_management_logic = memory_management_logic
         self.should_send_first_entries = should_send_first_entries
+        self.regression_model_type = 'nn' if isinstance(self.regression_model, OnlineRegressionNN) else 'ml'
         self.mae = None
         self.rmse = None
 
@@ -177,7 +180,7 @@ class HotelAgent(mesa.Agent):
             if index % 200000 == 0 and index != 0:
                 #mae, rmse = self.regression_model.evaluate(
                 #    self.testing_data.sample(self.testing_data_amount, random_state=42))
-                mae, rmse = self.regression_model.evaluate(self.testing_data)
+                mae, rmse = self.regression_model.evaluate(self.testing_data, self.regression_model_type)
                 mae_list.append(mae)
                 rmse_list.append(rmse)
                 self.mae = mae
@@ -194,7 +197,7 @@ class HotelAgent(mesa.Agent):
 
         #self.mae, self.rmse = self.regression_model.evaluate(
         #self.testing_data.sample(self.testing_data_amount, random_state=42))
-        self.mae, self.rmse = self.regression_model.evaluate(self.testing_data)
+        self.mae, self.rmse = self.regression_model.evaluate(self.testing_data, self.regression_model_type)
         print(self.mae, self.rmse)
 
         mae_list.append(self.mae)
@@ -219,7 +222,7 @@ class HotelAgent(mesa.Agent):
             if self.model.schedule.steps % self.model_eval_steps == 0 and self.model.schedule.steps != 0:
                 print("Hotel {} evaluation:".format(self.unique_id))
                 #mae, rmse = self.regression_model.evaluate(self.testing_data.sample(self.testing_data_amount, random_state=42))
-                mae, rmse = self.regression_model.evaluate(self.testing_data)
+                mae, rmse = self.regression_model.evaluate(self.testing_data, self.regression_model_type)
                 print("Hotel {} MAE: {}".format(self.unique_id, mae))
                 print("Hotel {} RMSE: {}".format(self.unique_id, rmse))
                 self.mae = mae
@@ -278,7 +281,7 @@ class HotelAgent(mesa.Agent):
         def select_last_entries():
             if self.should_be_fixed_subset_exchange_percentage:
                 return self.dataset.iloc[-round(len(self.dataset) * self.subset_exchange_percentage):]
-            return self.dataset.iloc[-self.bandwidth if len(self.dataset) >= self.bandwidth else len(self.dataset)]
+            return self.dataset.iloc[-self.bandwidth if len(self.dataset) >= self.bandwidth else -len(self.dataset):]
 
         def select_random_entries():
             if self.should_be_fixed_subset_exchange_percentage:
@@ -343,7 +346,17 @@ class HotelAgent(mesa.Agent):
         merged = pd.merge(data, self.dataset, on=['user', 'item'], how='left', indicator='Exist')
         #merged = merged.drop('Rating', inplace=True, axis=1)
         merged['Exist'] = np.where(merged.Exist == 'both', True, False)
-        data = merged[merged['Exist'] == False].drop(columns=['Exist']).rename(columns={'Rating_x': 'Rating'}).filter(items=['user', 'item', 'Rating'])
+
+        data = merged[merged['Exist'] == False].drop(columns=['Exist']).rename(columns={'Rating_x': 'Rating'})
+
+        if self.data_selection_logic.name == DataSelectionLogic.ORDERING_LOSS.name:
+            data = data.filter(items=['user', 'item', 'Rating', 'loss'])
+        elif self.data_selection_logic.name == DataSelectionLogic.ORDERING_DATE.name:
+            data = data.filter(items=['user', 'item', 'Rating', 'date'])
+        elif self.memory_management_logic.name == MemoryManagementLogic.MOST_RECENTLY_SENT.name:
+            data = data.filter(items=['user', 'item', 'Rating', 'date_sent'])
+        else:
+            data = data.filter(items=['user', 'item', 'Rating'])
 
         if len(data) == 0:
             return
@@ -418,9 +431,25 @@ class HotelAgent(mesa.Agent):
 
             self.dataset = pd.merge(self.dataset, user_entropies, on='user')
             self.dataset.sort_values(by='entropy', inplace=True)
+            self.dataset = self.dataset.rename(columns={'Rating_x': 'Rating'})
+
+            if self.data_selection_logic.name == DataSelectionLogic.ORDERING_LOSS.name:
+                if 'date_sent' in self.dataset.columns:
+                    self.dataset = self.dataset.filter(items=['user', 'item', 'Rating', 'loss', 'date_sent'])
+                else:
+                    self.dataset = self.dataset.filter(items=['user', 'item', 'Rating', 'loss'])
+            elif self.data_selection_logic.name == DataSelectionLogic.ORDERING_DATE.name:
+                if 'date_sent' in self.dataset.columns:
+                    self.dataset = self.dataset.filter(items=['user', 'item', 'Rating', 'date', 'date_sent'])
+                else:
+                    self.dataset = self.dataset.filter(items=['user', 'item', 'Rating', 'date'])
+            else:
+                if 'date_sent' in self.dataset.columns:
+                    self.dataset = self.dataset.filter(items=['user', 'item', 'Rating', 'date_sent'])
+                else:
+                    self.dataset = self.dataset.filter(items=['user', 'item', 'Rating'])
 
             self.dataset = self.dataset.iloc[space_to_free:]
-            self.dataset.drop(columns=['entropy'], inplace=True)
 
             if self.data_selection_logic.name == DataSelectionLogic.ORDERING_LOSS.name:
                 self.dataset.sort_values(by='loss', inplace=True)
@@ -434,27 +463,18 @@ class HotelAgent(mesa.Agent):
             '''
             Remove the data points that are closer to others to ensure having a high diversity of data points.
             '''
-            user_item_matrix = self.dataset.pivot(index='user', columns='item', values='Rating').fillna(0)
-            similarity_matrix = cosine_similarity(user_item_matrix)
-            similarity_df = pd.DataFrame(similarity_matrix, index=user_item_matrix.index, columns=user_item_matrix.index)
 
-            similarity_df = similarity_df.stack().reset_index()
-            similarity_df.columns = ['user1', 'user2', 'similarity']
+            nbrs = NearestNeighbors(n_neighbors=2, algorithm='auto').fit(self.dataset[['user', 'item']])
 
-            similarity_df = similarity_df[similarity_df['user1'] != similarity_df['user2']]
+            distances, indices = nbrs.kneighbors(self.dataset[['user', 'item']])
+            distances = pd.DataFrame(distances, columns=['distance1', 'distance2'])
+            indices = pd.DataFrame(indices, columns=['index1', 'index2'])
 
-            sorted_similarity_df = similarity_df.sort_values(by='similarity', ascending=False)
+            distances = pd.concat([distances, indices], axis=1)
 
-            users_to_remove = sorted_similarity_df.head(space_to_free)['user2'].unique()
+            distances.sort_values(by='distance2', inplace=True)
 
-            self.dataset = self.dataset[~self.dataset['user'].isin(users_to_remove)]
-
-            if self.data_selection_logic.name == DataSelectionLogic.ORDERING_LOSS.name:
-                self.dataset.sort_values(by='loss', inplace=True)
-
-            if self.data_selection_logic.name == DataSelectionLogic.ORDERING_DATE.name:
-                self.dataset.sort_values(by='date', inplace=True)
-
+            self.dataset = self.dataset.drop(distances.head(space_to_free)['index2'])
             self.dataset.reset_index(drop=True, inplace=True)
 
             return
@@ -479,7 +499,8 @@ class HotelAgent(mesa.Agent):
             '''
             assert self.data_selection_logic.name == DataSelectionLogic.ORDERING_LOSS.name, \
                 "Memory management logic MOST_UNCERTAIN is only compatible with data selection logic ORDERING_LOSS"
-            self.dataset = self.dataset.iloc[space_to_free:]
+            #remove the last space_to_free data points
+            self.dataset = self.dataset.iloc[:-space_to_free]
             self.dataset.reset_index(drop=True, inplace=True)
             return
 

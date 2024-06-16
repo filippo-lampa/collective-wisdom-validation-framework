@@ -7,11 +7,13 @@ has not directly explored. The overall goal is to ensure that each ghost has com
 to maximize the chances of catching Pacman.
 '''
 import os
+import argparse
 
 import mesa
 import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
+from matplotlib import patches
 
 from pacman_agent import PacmanAgent
 from ghost_agent import GhostAgent, DataInclusionLogic
@@ -21,13 +23,15 @@ from mesa import Model
 
 
 class PacmanModel(Model):
-    def __init__(self, num_ghosts):
+
+    def __init__(self, num_ghosts, ghosts_args, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         self.num_ghosts = num_ghosts
         self.schedule = mesa.time.SimultaneousActivation(self)
         self.running = True
         self.grid = mesa.space.MultiGrid(13, 13, True)
         self.episode_ended = False
-        #define a dictionary with the mapping between cells and their corresponding terrain
+        self.ghosts_args = ghosts_args
 
         def map_terrains():
             # Define the ranges for each terrain
@@ -37,9 +41,9 @@ class PacmanModel(Model):
 
             # Define the slowing factors for each terrain type
             slowing_factors = {
-                "standard": 0,
-                "grass": 0.8,
-                "mud": 0.9
+                "standard": args.standard_terrain_slowing_factor,
+                "grass": args.grass_terrain_slowing_factor,
+                "mud": args.mud_terrain_slowing_factor
             }
 
             # Create the dictionary to map grid locations to terrain types and slowing factors
@@ -87,9 +91,10 @@ class PacmanModel(Model):
 
         for i in range(1, self.num_ghosts + 1):
 
-            ghost = GhostAgent(i, self, 0.8, 0.95, 0.25, True,
-                               1, 100, [DataInclusionLogic.INCLUDE_LOWER_VALUES,
-                                        DataInclusionLogic.INCLUDE_NOT_PRESENT_VALUES], 0)
+            ghost = GhostAgent(i, self, self.ghosts_args.initial_learning_rate, self.ghosts_args.discount_factor,
+                               self.ghosts_args.exploration_rate, self.ghosts_args.use_protocol,
+                               self.ghosts_args.vicinity_radius, self.ghosts_args.bandwidth,
+                               self.ghosts_args.data_inclusion_logics, self.ghosts_args.learning_rate_decay)
 
             self.schedule.add(ghost)
 
@@ -149,9 +154,82 @@ class PacmanModel(Model):
         plt.show()
         '''
 
+    def plot_map_terrains(self):
+        #plot grass terrain in green, mud terrain in brown and standard terrain in yellow.
+        # The walls are plotted in black
+
+        color_map = {
+            0: "green",
+            1: "olive",
+            2: "yellow",
+            3: "black"
+        }
+
+        grid_size = (13, 13)
+
+        # Create a figure and axis
+        fig, ax = plt.subplots()
+
+        # Set the limits of the plot
+        ax.set_xlim(0, grid_size[0])
+        ax.set_ylim(0, grid_size[1])
+
+        # Draw the grid
+        for x in range(grid_size[0] + 1):
+            ax.axhline(x, color='gray', linewidth=0.5)
+            ax.axvline(x, color='gray', linewidth=0.5)
+
+        walls_positions = [(y, x) for x, y in self.walls_positions]
+
+        for i in range(grid_size[0]):
+            for j in range(grid_size[1]):
+                cell_id = i * grid_size[0] + j
+                terrain_type, slowing_factor = self.terrain_map[cell_id]
+                color = color_map[3] if (i, j) in walls_positions else color_map[0] if terrain_type == "grass" \
+                    else color_map[1] if terrain_type == "mud" else color_map[2]
+                rect = patches.Rectangle((j, grid_size[0] - i - 1), 1, 1, linewidth=1, edgecolor='none',
+                                         facecolor=color)
+                ax.add_patch(rect)
+
+        # Set aspect of the plot to be equal
+        ax.set_aspect('equal')
+
+        # Hide the axis
+        ax.axis('off')
+
+        # Show the plot
+        plt.show()
+
+
 if __name__ == '__main__':
 
-    model = PacmanModel(3)
+    # model args
+    parser = argparse.ArgumentParser(description='Run the multi-agent reinforcement learning system')
+    parser.add_argument('--num_ghosts', type=int, default=3, help='Number of ghosts in the game')
+    parser.add_argument('--num_episodes', type=int, default=100000000, help='Number of episodes to run')
+    parser.add_argument('--plot_steps', type=int, default=100, help='Number of steps between performance plots')
+    parser.add_argument('--standard_terrain_slowing_factor', type=float, default=0, help='Slowing factor for standard terrain')
+    parser.add_argument('--grass_terrain_slowing_factor', type=float, default=0.8, help='Slowing factor for grass terrain')
+    parser.add_argument('--mud_terrain_slowing_factor', type=float, default=0.9, help='Slowing factor for mud terrain')
+
+    # ghosts args
+    parser.add_argument('--initial_learning_rate', type=float, default=0.8, help='Initial learning rate for the ghosts')
+    parser.add_argument('--discount_factor', type=float, default=0.95, help='Discount factor for the ghosts')
+    parser.add_argument('--exploration_rate', type=float, default=0.25, help='Exploration rate for the ghosts')
+    parser.add_argument('--use_protocol', type=bool, default=True, help='Use protocol for data exchange between ghosts')
+    parser.add_argument('--vicinity_radius', type=int, default=1, help='Vicinity radius for data exchange between ghosts')
+    parser.add_argument('--bandwidth', type=int, default=100, help='Bandwidth for data exchange between ghosts')
+    parser.add_argument('--data_inclusion_logics', type=list, default=[DataInclusionLogic.INCLUDE_LOWER_VALUES,
+                                                                       DataInclusionLogic.INCLUDE_NOT_PRESENT_VALUES],
+                        help='Data inclusion logics for data exchange between ghosts')
+    parser.add_argument('--learning_rate_decay', type=float, default=0, help='Learning rate decay for the ghosts')
+
+
+    args = parser.parse_args()
+
+    model = PacmanModel(args.num_ghosts, args)
+
+    model.plot_map_terrains()
 
     agent_counts = np.zeros((model.grid.width, model.grid.height))
     for cell_content, (x, y) in model.grid.coord_iter():
@@ -163,7 +241,8 @@ if __name__ == '__main__':
     g.set(title="Number of agents on each cell of the grid")
     plt.show()
 
-    num_episodes = 100000000
+    num_episodes = args.num_episodes
+    plot_steps = args.plot_steps
 
     steps_needed_per_episode = []
 
@@ -202,7 +281,7 @@ if __name__ == '__main__':
 
         print("Average number of steps needed per episode: ", np.mean(steps_needed_per_episode))
 
-        if i % 100 == 0 and i != 0:
+        if i % plot_steps == 0 and i != 0:
 
             g = sns.lineplot(data=steps_needed_per_episode)
             #g.set(title="Number of steps needed per episode with protocol", ylabel="Number of steps", xlabel="Episode number")

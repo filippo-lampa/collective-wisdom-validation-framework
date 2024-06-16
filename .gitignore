@@ -12,6 +12,8 @@ models/data/
 *.pkl
 *.pt
 
+*.png
+
 *.csv
 
 collective_system_analysis/case_scenario_2/plots/
