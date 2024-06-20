@@ -18,6 +18,7 @@ models/data/
 
 collective_system_analysis/case_scenario_2/plots/
 collective_system_analysis/case_scenario_1/plots/
+collective_system_analysis/case_scenario_1/plots_countdown_version/
 
 # User-specific stuff
 .idea/

@@ -16,7 +16,7 @@ import matplotlib.pyplot as plt
 from matplotlib import patches
 
 from pacman_agent import PacmanAgent
-from ghost_agent import GhostAgent, DataInclusionLogic
+from ghost_agent import GhostAgent, DataInclusionLogic, DataSelectionLogic
 from wall_agent import WallAgent
 
 from mesa import Model
@@ -24,20 +24,46 @@ from mesa import Model
 
 class PacmanModel(Model):
 
-    def __init__(self, num_ghosts, ghosts_args, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, num_ghosts, args: argparse.Namespace):
+        super().__init__()
         self.num_ghosts = num_ghosts
         self.schedule = mesa.time.SimultaneousActivation(self)
         self.running = True
-        self.grid = mesa.space.MultiGrid(13, 13, True)
+        self.grid = mesa.space.MultiGrid(15, 15, True)
         self.episode_ended = False
-        self.ghosts_args = ghosts_args
+        self.args = args
+        self.last_step_plotted = -1
+        self.ax = None
+        self.fig = None
+        self.current_episode = 0
+        self.interactive_plot = args.interactive_plot
+        self.steps_needed_per_episode = []
+
+        args_inclusion_logic_mapping = {
+            'higher': DataInclusionLogic.INCLUDE_HIGHER_VALUES,
+            'lower': DataInclusionLogic.INCLUDE_LOWER_VALUES,
+            'not_present': DataInclusionLogic.INCLUDE_NOT_PRESENT_VALUES
+        }
+
+        args_data_selection_logic_mapping = {
+            'highest_reward': DataSelectionLogic.HIGHEST_REWARD,
+            'lowest_reward': DataSelectionLogic.LOWEST_REWARD,
+            'random': DataSelectionLogic.RANDOM
+        }
+
+        args_data_inclusion_logics = args.data_inclusion_logics.split(',')
 
         def map_terrains():
-            # Define the ranges for each terrain
-            grass_range = range(0, 55)
-            mud_range = range(55, 111)
-            standard_range = range(111, 169)
+            # Define the ranges for each terrain. Upper left side is grass, upper right side is mud and the rest is standard
+
+            grass_range = [i for i in range(16, 22)] + [i for i in range(31, 37)] + [i for i in range(46, 52)] + [i for i in range(61, 67)]
+            mud_range = [i for i in range(158, 164)] + [i for i in range(173, 179)] + [i for i in range(188, 194)] + [i for i in range(203, 209)]
+            all_indices = set(range(self.grid.width * self.grid.height))
+            grass_range = set(grass_range)
+            mud_range = set(mud_range)
+            standard_range = all_indices - (grass_range | mud_range)
+
+
 
             # Define the slowing factors for each terrain type
             slowing_factors = {
@@ -65,17 +91,34 @@ class PacmanModel(Model):
 
         self.terrain_map = map_terrains()
 
-        self.walls_positions = [(6, 0),
-                           (1, 1), (3, 1), (4, 1), (6, 1), (8, 1), (9, 1), (11, 1),
-                           (1, 3), (3, 3), (5, 3), (6, 3), (7, 3), (9, 3), (11, 3),
-                           (0, 5), (1, 5), (4, 5), (5, 5), (7, 5), (8, 5), (11, 5), (12, 5),
-                           (4, 6), (8, 6),
-                           (0, 7), (1, 7), (4, 7), (5, 7), (6, 7), (7, 7), (8, 7), (11, 7), (12, 7),
-                           (1, 9), (3, 9), (5, 9), (6, 9), (7, 9), (9, 9), (11, 9),
-                           (1, 11), (3, 11), (4, 11), (6, 11), (8, 11), (9, 11), (11, 11),
-                           (6, 12)]
+        # self.walls_positions = [(6, 0),
+        #                    (1, 1), (3, 1), (4, 1), (6, 1), (8, 1), (9, 1), (11, 1),
+        #                    (1, 3), (3, 3), (5, 3), (6, 3), (7, 3), (9, 3), (11, 3),
+        #                    (0, 5), (1, 5), (4, 5), (5, 5), (7, 5), (8, 5), (11, 5), (12, 5),
+        #                    (4, 6), (8, 6),
+        #                    (0, 7), (1, 7), (4, 7), (5, 7), (6, 7), (7, 7), (8, 7), (11, 7), (12, 7),
+        #                    (1, 9), (3, 9), (5, 9), (6, 9), (7, 9), (9, 9), (11, 9),
+        #                    (1, 11), (3, 11), (4, 11), (6, 11), (8, 11), (9, 11), (11, 11),
+        #                    (6, 12)]
 
-        pacman = PacmanAgent(0, self)
+        self.walls_positions = [(7, 1),
+                                (2, 2), (4, 2), (5, 2), (7, 2), (9, 2), (10, 2), (12, 2),
+                                (2, 4), (4, 4), (6, 4), (7, 4), (8, 4), (10, 4), (12, 4),
+                                (1, 6), (2, 6), (5, 6), (6, 6), (8, 6), (9, 6), (12, 6), (13, 6),
+                                (5, 7), (9, 7),
+                                (1, 8), (2, 8), (5, 8), (6, 8), (7, 8), (8, 8), (9, 8), (12, 8), (13, 8),
+                                (2, 10), (4, 10), (6, 10), (7, 10), (8, 10), (10, 10), (12, 10),
+                                (2, 12), (4, 12), (5, 12), (7, 12), (9, 12), (10, 12), (12, 12),
+                                (7, 13)]
+
+        boundary_walls = [(i, 0) for i in range(self.grid.width)] + [(i, self.grid.width - 1) for i in range(self.grid.width)] + \
+                         [(0, i) for i in range(self.grid.height)] + [(self.grid.height - 1, i) for i in range(self.grid.height)]
+
+        all_walls_positions = set(self.walls_positions + boundary_walls)
+
+        self.walls_positions = list(all_walls_positions)
+
+        pacman = PacmanAgent(0, self, self.args.should_penalize_terrain)
         self.schedule.add(pacman)
         x = self.random.randrange(self.grid.width)
         y = self.random.randrange(self.grid.height)
@@ -87,14 +130,18 @@ class PacmanModel(Model):
                 y = self.random.randrange(self.grid.height)
             self.grid.place_agent(pacman, (x, y))
 
-        starting_ghosts_position = (6, 6)
+        starting_ghosts_position = (7, 7)
 
         for i in range(1, self.num_ghosts + 1):
 
-            ghost = GhostAgent(i, self, self.ghosts_args.initial_learning_rate, self.ghosts_args.discount_factor,
-                               self.ghosts_args.exploration_rate, self.ghosts_args.use_protocol,
-                               self.ghosts_args.vicinity_radius, self.ghosts_args.bandwidth,
-                               self.ghosts_args.data_inclusion_logics, self.ghosts_args.learning_rate_decay)
+            ghost = GhostAgent(i, self, self.args.initial_learning_rate, self.args.discount_factor,
+                               self.args.exploration_rate, self.args.use_protocol,
+                               self.args.vicinity_radius, self.args.bandwidth,
+                               [args_inclusion_logic_mapping[logic] for logic in args_data_inclusion_logics],
+                               self.args.learning_rate_decay, args_data_selection_logic_mapping[args.data_selection_logic],
+                               self.args.should_penalize_terrain, self.args.get_closer_reward, self.args.get_farther_reward,
+                               self.args.catch_pacman_reward, self.args.hit_wall_reward, self.args.max_steps,
+                               self.args.early_stopping)
 
             self.schedule.add(ghost)
 
@@ -114,6 +161,9 @@ class PacmanModel(Model):
             agent_reporters={"Steps": "steps"}
         )
 
+    def get_wall_positions(self):
+        return self.walls_positions
+
     def get_terrain_penalty(self, cell_id):
         #cell_id = x * self.grid.width + y
         terrain_type, slowing_factor = self.terrain_map[cell_id]
@@ -123,7 +173,10 @@ class PacmanModel(Model):
         self.datacollector.collect(self)
         self.schedule.step()
 
-    def end_episode(self):
+    def end_episode(self, stopped_early, step):
+
+        if not stopped_early:
+            self.steps_needed_per_episode.append(step)
 
         self.episode_ended = True
 
@@ -165,7 +218,7 @@ class PacmanModel(Model):
             3: "black"
         }
 
-        grid_size = (13, 13)
+        grid_size = (15, 15)
 
         # Create a figure and axis
         fig, ax = plt.subplots()
@@ -200,30 +253,107 @@ class PacmanModel(Model):
         # Show the plot
         plt.show()
 
+    def plot_env_status(self, step):
+        if not self.interactive_plot:
+            return
+        print("Plotting environment status")
+        if step > self.last_step_plotted:
+            self.last_step_plotted = step
+            agent_counts = np.zeros((self.grid.width, self.grid.height))
+            for cell_content, (x, y) in self.grid.coord_iter():
+                agent_count = len(cell_content)
+                agent_counts[x][y] = agent_count
+
+            def color_agent(agent):
+                color = None
+                if isinstance(agent, PacmanAgent):
+                    color = 'yellow'
+                elif isinstance(agent, GhostAgent):
+                    if agent.unique_id == 1:
+                        color = 'cyan'
+                    elif agent.unique_id == 2:
+                        color = 'orange'
+                    else:
+                        color = 'pink'
+                elif isinstance(agent, WallAgent):
+                    color = 'blue'
+
+                rect = patches.Rectangle((agent.pos[0], agent.pos[1]), 1, 1, linewidth=1, edgecolor='black',
+                                         facecolor=color)
+                self.ax.add_patch(rect)
+
+            if self.fig is None:
+                plt.ion()
+                plt.style.use('dark_background')
+                self.fig, self.ax = plt.subplots()
+                self.heatmap = sns.heatmap(agent_counts.T, cmap="viridis", annot=True, cbar=False, square=True)
+                sns.set_style(rc={'figure.facecolor': 'red'})
+                self.heatmap.figure.set_size_inches(4, 4)
+                self.heatmap.set_title("Environment status at step " + str(step) + " of episode " + str(self.current_episode))
+                pacman_agent = self.get_agents_of_type(PacmanAgent)[0]
+                color_agent(pacman_agent)
+                ghost_agents = self.get_agents_of_type(GhostAgent)
+                for ghost in ghost_agents:
+                    color_agent(ghost)
+                '''
+                wall_agents = self.get_agents_of_type(WallAgent)
+                for wall in wall_agents:
+                    color_agent(wall)
+                '''
+                plt.show()
+            else:
+                # Update existing plot
+                self.ax.clear()  # Clear the axis before plotting new data
+                self.heatmap = sns.heatmap(agent_counts.T, cmap="viridis", annot=True, cbar=False, square=True,
+                                           ax=self.ax)
+                self.heatmap.set_title("Environment status at step " + str(step) + " of episode " + str(self.current_episode))
+
+                pacman_agent = self.get_agents_of_type(PacmanAgent)[0]
+                color_agent(pacman_agent)
+                ghost_agents = self.get_agents_of_type(GhostAgent)
+                for ghost in ghost_agents:
+                    color_agent(ghost)
+                # wall_agents = self.get_agents_of_type(WallAgent)
+                # for wall in wall_agents:
+                #     color_agent(wall)
+
+                plt.style.use("dark_background")
+                self.fig.canvas.draw()
+                self.fig.canvas.flush_events()
+
+
+
 
 if __name__ == '__main__':
 
     # model args
     parser = argparse.ArgumentParser(description='Run the multi-agent reinforcement learning system')
     parser.add_argument('--num_ghosts', type=int, default=3, help='Number of ghosts in the game')
-    parser.add_argument('--num_episodes', type=int, default=100000000, help='Number of episodes to run')
-    parser.add_argument('--plot_steps', type=int, default=100, help='Number of steps between performance plots')
+    parser.add_argument('--num_episodes', type=int, default=10000, help='Number of episodes to run')
+    parser.add_argument('--plot_episodes', type=int, default=500, help='Number of steps between performance plots')
     parser.add_argument('--standard_terrain_slowing_factor', type=float, default=0, help='Slowing factor for standard terrain')
-    parser.add_argument('--grass_terrain_slowing_factor', type=float, default=0.8, help='Slowing factor for grass terrain')
-    parser.add_argument('--mud_terrain_slowing_factor', type=float, default=0.9, help='Slowing factor for mud terrain')
+    parser.add_argument('--grass_terrain_slowing_factor', type=float, default=2, help='Slowing factor for grass terrain')
+    parser.add_argument('--mud_terrain_slowing_factor', type=float, default=4, help='Slowing factor for mud terrain')
+    parser.add_argument('--plots_name', type=str, default='', help='Name shown in the plots')
+    parser.add_argument('--should_penalize_terrain', action='store_true', help='Enable terrain penalties for the ghosts')
 
     # ghosts args
-    parser.add_argument('--initial_learning_rate', type=float, default=0.8, help='Initial learning rate for the ghosts')
+    parser.add_argument('--early_stopping', action='store_true', help='Enable early stop for the ghosts')
+    parser.add_argument('--max_steps', type=int, default=400, help='Maximum number of steps per episode')
+    parser.add_argument('--hit_wall_reward', type=float, default=-80, help='Reward for hitting a wall')
+    parser.add_argument('--get_closer_reward', type=float, default=40, help='Reward for getting closer to Pacman')
+    parser.add_argument('--get_farther_reward', type=float, default=-20, help='Reward for getting farther from Pacman')
+    parser.add_argument('--catch_pacman_reward', type=float, default=100, help='Reward for catching Pacman')
+    parser.add_argument('--initial_learning_rate', type=float, default=0.95, help='Initial learning rate for the ghosts')
     parser.add_argument('--discount_factor', type=float, default=0.95, help='Discount factor for the ghosts')
     parser.add_argument('--exploration_rate', type=float, default=0.25, help='Exploration rate for the ghosts')
-    parser.add_argument('--use_protocol', type=bool, default=True, help='Use protocol for data exchange between ghosts')
+    parser.add_argument('--use_protocol', action='store_true', help='Use protocol for data exchange between ghosts')
     parser.add_argument('--vicinity_radius', type=int, default=1, help='Vicinity radius for data exchange between ghosts')
     parser.add_argument('--bandwidth', type=int, default=100, help='Bandwidth for data exchange between ghosts')
-    parser.add_argument('--data_inclusion_logics', type=list, default=[DataInclusionLogic.INCLUDE_LOWER_VALUES,
-                                                                       DataInclusionLogic.INCLUDE_NOT_PRESENT_VALUES],
-                        help='Data inclusion logics for data exchange between ghosts')
+    parser.add_argument('--data_inclusion_logics', type=str, default='lower,not_present', help='Logics for including exchange data between ghosts in q-tables (can choose more than one): higher, lower, not_present')
+    parser.add_argument('--data_selection_logic', type=str, default='random', help='Logic for selecting data to exchange between ghosts in q-tables: highest_reward, lowest_reward, random')
     parser.add_argument('--learning_rate_decay', type=float, default=0, help='Learning rate decay for the ghosts')
-
+    parser.add_argument('--interactive_plot', action='store_true', help='Enable interactive plot')
 
     args = parser.parse_args()
 
@@ -231,25 +361,20 @@ if __name__ == '__main__':
 
     model.plot_map_terrains()
 
-    agent_counts = np.zeros((model.grid.width, model.grid.height))
-    for cell_content, (x, y) in model.grid.coord_iter():
-        agent_count = len(cell_content)
-        agent_counts[x][y] = agent_count
-
-    g = sns.heatmap(agent_counts.T, cmap="viridis", annot=True, cbar=False, square=True)
-    g.figure.set_size_inches(4, 4)
-    g.set(title="Number of agents on each cell of the grid")
-    plt.show()
+    plots_name = args.plots_name
 
     num_episodes = args.num_episodes
-    plot_steps = args.plot_steps
+    plot_episodes = args.plot_episodes
 
-    steps_needed_per_episode = []
+    mean_steps_needed_per_episode = []
+    early_ratio = []
 
     if not os.path.exists('plots'):
         os.makedirs('plots')
 
     for i in range(num_episodes):
+
+        model.current_episode = i
 
         model.episode_ended = False
 
@@ -277,22 +402,46 @@ if __name__ == '__main__':
             '''
             count += 1
 
-        steps_needed_per_episode.append(count)
+        mean_steps_needed = np.mean(model.steps_needed_per_episode)
 
-        print("Average number of steps needed per episode: ", np.mean(steps_needed_per_episode))
+        print("Average number of steps needed per episode: ", mean_steps_needed)
 
-        if i % plot_steps == 0 and i != 0:
+        mean_steps_needed_per_episode.append(mean_steps_needed)
 
-            g = sns.lineplot(data=steps_needed_per_episode)
+        if args.early_stopping and i > 0:
+            early_stops_ratio = len(model.steps_needed_per_episode) / i
+            early_ratio.append(early_stops_ratio)
+
+        if i % plot_episodes == 0 and i != 0:
+
+            g = sns.lineplot(data=model.steps_needed_per_episode)
             #g.set(title="Number of steps needed per episode with protocol", ylabel="Number of steps", xlabel="Episode number")
-            g.set(title="Number of steps needed per episode without protocol", ylabel="Number of steps",
+            g.set(title=plots_name, ylabel="Number of steps",
                   xlabel="Episode number")
-            plt.savefig(os.path.join(os.getcwd(), 'plots', 'steps_needed_per_episode.png'))
             plt.show()
 
-    g = sns.lineplot(data=steps_needed_per_episode, x=range(len(steps_needed_per_episode)), y=steps_needed_per_episode)
-    g.set(title="Number of steps needed per episode", ylabel="Number of steps", xlabel="Episode number")
-    plt.savefig(os.path.join(os.getcwd(), 'plots', 'steps_needed_per_episode.png'))
+            g = sns.lineplot(data=mean_steps_needed_per_episode)
+            #g.set(title="Number of steps needed per episode with protocol", ylabel="Number of steps", xlabel="Episode number")
+            g.set(title=plots_name, ylabel="Mean Number of Steps per Episode",
+                  xlabel="Episode number")
+            plt.savefig(os.path.join(os.getcwd(), 'plots_countdown_version', 'mean_steps_needed_per_episode_' + plots_name + '.png'))
+            plt.show()
+
+            #plot the ratio of the number of early stops to the total number of episodes to see how it evolves over time. The number of early
+            # stops is the length of the steps_needed_per_episode list. The ratio is the number of early stops divided by the total number of episodes.
+            if args.early_stopping:
+                g = sns.lineplot(data=early_ratio)
+                g.set(title="Ratio of non-early ended episodes to total number of episodes", ylabel="Ratio", xlabel="Episode number")
+                plt.show()
+
+    g = sns.lineplot(data=model.steps_needed_per_episode)
+    g.set(title=plots_name, ylabel="Number of steps", xlabel="Episode number")
     plt.show()
+
+    g = sns.lineplot(data=mean_steps_needed_per_episode)
+    g.set(title=plots_name, ylabel="Mean Number of Steps per Episode", xlabel="Episode number")
+    plt.savefig(os.path.join(os.getcwd(), 'plots_countdown_version', 'mean_steps_needed_per_episode_' + plots_name + '.png'))
+    plt.show()
+
 
 

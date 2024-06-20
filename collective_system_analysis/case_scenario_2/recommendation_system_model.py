@@ -356,14 +356,14 @@ if __name__ == '__main__':
     parser.add_argument('--eval_steps', type=int, default=10000, help='Number of simulation steps between evaluations')
     parser.add_argument('--save_steps', type=int, default=20000, help='Number of simulation steps between saving the model')
     parser.add_argument('--plot_steps', type=int, default=20000, help='Number of simulation steps between plotting the model')
-    parser.add_argument('--resume', type=bool, default=False, help='Whether to resume the simulation')
+    parser.add_argument('--resume', action="store_true", help='Whether to resume the simulation')
     parser.add_argument('--plots_name', type=str, default='', help='Name shown in the plots')
     parser.add_argument('--approach', type=str, default='ml', help='The type of model used for the recommendation system')
     parser.add_argument('--num_hotels', type=int, default=5, help='Number of hotels in the simulation')
     parser.add_argument('--num_customers', type=int, default=10, help='Number of customers in the simulation')
-    parser.add_argument('--load_existing_data', type=bool, default=False, help='Whether to load existing preprocessed dataset')
-    parser.add_argument('--stratified_users', type=bool, default=False, help='Whether to stratify the users in the dataset to ensure each one is both in training and testing set')
-    parser.add_argument('--should_save_checkpoints', type=bool, default=False, help='Whether to save checkpoints of the model during computation')
+    parser.add_argument('--load_existing_data', action="store_true", help='Whether to load existing preprocessed dataset')
+    parser.add_argument('--stratified_users', action="store_true", help='Whether to stratify the users in the dataset to ensure each one is both in training and testing set')
+    parser.add_argument('--should_save_checkpoints', action="store_true", help='Whether to save checkpoints of the model during computation')
 
     # hotel agent parameters from args
     parser.add_argument('--nearby_agents_data_exchange_steps', type=int, default=1, help='Number of steps between data exchange with nearby agents')
@@ -373,15 +373,15 @@ if __name__ == '__main__':
     parser.add_argument('--maximum_time_steps_for_exchange', type=int, default=1000, help='Maximum number of time steps for data exchange')
     parser.add_argument('--testing_data_amount', type=int, default=1000, help='Amount of testing data')
     parser.add_argument('--starting_dataset_size', type=int, default=0, help='Size of the starting dataset')
-    parser.add_argument('--should_use_protocol', type=bool, default=True, help='Whether to use the protocol for data exchange')
-    parser.add_argument('--should_keep_data_ordered', type=bool, default=False, help='Whether to keep the data ordered')
+    parser.add_argument('--should_use_protocol', action="store_true", help='Whether to use the protocol for data exchange')
+    parser.add_argument('--should_keep_data_ordered', action="store_true", help='Whether to keep the data ordered')
     parser.add_argument('--data_selection_logic', type=str, default='ordering_untouched', help='Logic for selecting data: ordering_untouched, ordering_loss, ordering_date, random, clustering, loss_threshold')
-    parser.add_argument('--should_train_all_data', type=bool, default=False, help='Whether to train all the data')
+    parser.add_argument('--should_train_all_data', action="store_true", help='Whether to train all the data')
     parser.add_argument('--should_be_fixed_subset_exchange_percentage', type=bool, default=False, help='Whether the subset exchange percentage should be fixed')
     parser.add_argument('--subset_exchange_percentage', type=float, default=0.2, help='Percentage of the subset to exchange')
     parser.add_argument('--loss_threshold', type=int, default=3, help='Threshold for the loss')
     parser.add_argument('--memory_management_logic', type=str, default='fifo', help='Logics for managing the memory: fifo, entropy, nearest_neighbors, most_recently_sent, most_uncertain')
-    parser.add_argument('--should_send_first_entries', type=bool, default=False, help='Whether to send the first entries')
+    parser.add_argument('--should_send_first_entries', action="store_true", help='Whether to send the first entries')
 
     args = parser.parse_args()
 
@@ -427,11 +427,9 @@ if __name__ == '__main__':
         agents_data = model.datacollector.get_agent_vars_dataframe().dropna()
         g = sns.lineplot(data=resumed_agents_data, x="Step", y="MAE", hue="AgentID")
         g.set(title="{}: MAE over time - Time step ".format(plots_name) + str(resumed_number_of_steps), ylabel="MAE")
-        plt.savefig(os.path.join(os.getcwd(), 'plots', 'MAE.png'))
         plt.show()
         g = sns.lineplot(data=resumed_agents_data, x="Step", y="RMSE", hue="AgentID")
         g.set(title="{}: RMSE data over time - Time step ".format(plots_name) + str(resumed_number_of_steps), ylabel="RMSE")
-        plt.savefig(os.path.join(os.getcwd(), 'plots', 'RMSE.png'))
         plt.show()
 
     for i in range(number_of_steps):
@@ -455,7 +453,7 @@ if __name__ == '__main__':
             else:
                 g = sns.lineplot(data=agents_data, x="Step", y="MAE", hue="AgentID")
             g.set(title="{}: MAE over time - Time step ".format(plots_name) + str(i), ylabel="MAE")
-            plt.savefig(os.path.join(os.getcwd(), 'plots', 'MAE.png'))
+            plt.savefig(os.path.join(os.getcwd(), 'plots', 'mae_' + str(i) + '_' + plots_name + '.png'))
             plt.show()
 
             if should_resume:
@@ -463,7 +461,7 @@ if __name__ == '__main__':
             else:
                 g = sns.lineplot(data=agents_data, x="Step", y="RMSE", hue="AgentID")
             g.set(title="{}: RMSE data over time - Time step ".format(plots_name) + str(i), ylabel="RMSE")
-            plt.savefig(os.path.join(os.getcwd(), 'plots', 'RMSE.png'))
+            plt.savefig(os.path.join(os.getcwd(), 'plots', 'rmse_' + str(i) + '_' + plots_name + '.png'))
             plt.show()
 
     agents_data = model.datacollector.get_agent_vars_dataframe()
@@ -474,7 +472,7 @@ if __name__ == '__main__':
     else:
         g = sns.lineplot(data=agents_data, x="Step", y="MAE", hue="AgentID")
     g.set(title="{}: MAE over time - Last step ".format(plots_name), ylabel="MAE")
-    plt.savefig(os.path.join(os.getcwd(), 'plots', 'MAE.png'))
+    plt.savefig(os.path.join(os.getcwd(), 'plots', 'mae_' + 'last_step_' + plots_name + '.png'))
     plt.show()
 
     if should_resume:
@@ -482,7 +480,7 @@ if __name__ == '__main__':
     else:
         g = sns.lineplot(data=agents_data, x="Step", y="RMSE", hue="AgentID")
     g.set(title="{}: RMSE data over time - Last step ".format(plots_name), ylabel="RMSE")
-    plt.savefig(os.path.join(os.getcwd(), 'plots', 'RMSE.png'))
+    plt.savefig(os.path.join(os.getcwd(), 'plots', 'rmse_' + 'last_step_' + plots_name + '.png'))
     plt.show()
 
 
