@@ -40,16 +40,11 @@ Domain incremental learning means new instances of data can be added to the data
 means new classes can be added to the dataset.
 '''
 import torch
-from river import datasets
-from river import evaluate
 #from river import neural_net as nn
-from torch import nn
-from river import optim
-from river import preprocessing as pp
 from river import metrics
 from river.evaluate import progressive_val_score
 
-from models.online_regression import OnlineRegression
+from collective_system_analysis.case_scenario_2.models.online_regression import OnlineRegression
 
 
 class OnlineRegressionNN(OnlineRegression):

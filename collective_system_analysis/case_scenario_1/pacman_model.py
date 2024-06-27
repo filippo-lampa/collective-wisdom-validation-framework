@@ -117,7 +117,7 @@ class PacmanModel(Model):
         all_walls_positions = set(self.walls_positions + boundary_walls)
 
         self.walls_positions = list(all_walls_positions)
-
+        '''
         pacman = PacmanAgent(0, self, self.args.should_penalize_terrain)
         self.schedule.add(pacman)
         x = self.random.randrange(self.grid.width)
@@ -149,7 +149,7 @@ class PacmanModel(Model):
             y = starting_ghosts_position[1]
 
             self.grid.place_agent(ghost, (x, y))
-
+        '''
         for i in range(self.num_ghosts + 1, self.num_ghosts + 1 + len(self.walls_positions)):
             wall = WallAgent(i, self)
             self.schedule.add(wall)
@@ -177,6 +177,9 @@ class PacmanModel(Model):
 
         if not stopped_early:
             self.steps_needed_per_episode.append(step)
+
+        if self.interactive_plot:
+            self.last_step_plotted = -1
 
         self.episode_ended = True
 
@@ -338,9 +341,11 @@ if __name__ == '__main__':
     parser.add_argument('--should_penalize_terrain', action='store_true', help='Enable terrain penalties for the ghosts')
 
     # ghosts args
+    parser.add_argument('--bandwidth_increase_rate', type=float, default=0.1, help='Rate at which the bandwidth increases for the ghosts')
+    parser.add_argument('--should_increase_bandwidth', action='store_true', help='Enable increasing bandwidth for the ghosts through time')
     parser.add_argument('--early_stopping', action='store_true', help='Enable early stop for the ghosts')
     parser.add_argument('--max_steps', type=int, default=400, help='Maximum number of steps per episode')
-    parser.add_argument('--hit_wall_reward', type=float, default=-80, help='Reward for hitting a wall')
+    parser.add_argument('--hit_wall_reward', type=float, default=-20, help='Reward for hitting a wall')
     parser.add_argument('--get_closer_reward', type=float, default=40, help='Reward for getting closer to Pacman')
     parser.add_argument('--get_farther_reward', type=float, default=-20, help='Reward for getting farther from Pacman')
     parser.add_argument('--catch_pacman_reward', type=float, default=100, help='Reward for catching Pacman')
@@ -357,6 +362,13 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
+    if not os.path.exists('logs'):
+        os.makedirs('logs')
+
+    with open(os.path.join(os.getcwd(), 'logs', 'args_' + args.plots_name + '.txt'), 'w') as f:
+        for key, value in vars(args).items():
+            f.write('%s: %s\n' % (key, value))
+
     model = PacmanModel(args.num_ghosts, args)
 
     model.plot_map_terrains()
@@ -369,10 +381,24 @@ if __name__ == '__main__':
     mean_steps_needed_per_episode = []
     early_ratio = []
 
+    agent_counts = np.zeros((model.grid.width, model.grid.height))
+    for cell_content, (x, y) in model.grid.coord_iter():
+        agent_count = len(cell_content)
+        agent_counts[x][y] = agent_count
+
+    g = sns.heatmap(agent_counts.T, cmap="viridis", annot=True, cbar=False, square=True)
+    g.figure.set_size_inches(4, 4)
+    g.set(title="Number of agents on each cell of the grid")
+    plt.show()
+
     if not os.path.exists('plots'):
         os.makedirs('plots')
 
     for i in range(num_episodes):
+
+        if args.should_increase_bandwidth and i > 10:
+            model.get_agents_of_type(GhostAgent)[0].update_bandwidth(int(
+                min(args.bandwidth, args.bandwidth * args.bandwidth_increase_rate * (i - 10))))
 
         model.current_episode = i
 
@@ -384,7 +410,7 @@ if __name__ == '__main__':
 
         while not model.episode_ended:
 
-            print("Step number: ", count, " of episode number: ", i)
+            print("Step number: ", count, " of episode number: ", i, "for simulation: ", plots_name)
 
             model.step()
             '''

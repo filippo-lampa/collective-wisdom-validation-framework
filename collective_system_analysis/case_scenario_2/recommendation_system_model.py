@@ -25,12 +25,12 @@ import seaborn as sns
 import numpy as np
 import pandas as pd
 
-from collective_system_analysis.case_scenario_2.model_architectures import RecommendationNN, NCF
+from collective_system_analysis.case_scenario_2.model_architectures import RecommendationNN, NCF, print_nn_architecture
 from hotel_agent import HotelAgent
 from customer_agent import CustomerAgent
 
-from models.ml.online_regression_model import OnlineRegressionModel
-from models.dl.online_regression_nn import OnlineRegressionNN
+from collective_system_analysis.case_scenario_2.models.ml.online_regression_model import OnlineRegressionModel
+from collective_system_analysis.case_scenario_2.models.dl.online_regression_nn import OnlineRegressionNN
 
 from collective_system_analysis.case_scenario_2.hotel_agent import DataSelectionLogic, MemoryManagementLogic
 
@@ -131,6 +131,8 @@ class RecommendationSystemModel(mesa.Model):
 
                 agent_online_regression_model = OnlineRegressionModel(regression_model, 'agent_{}_model'.format(i))
 
+            #print_nn_architecture('NCF', user_id_mapping)
+
             agent_data = agent_data_mapping[i]
 
             agent_dataset = None
@@ -207,13 +209,13 @@ class RecommendationSystemModel(mesa.Model):
     def prepare_starting_data(self):
 
         def prepare_dataset():
-            df1 = pd.read_csv('../../models/data/case_scenario_2/netflix_prize_dataset/combined_data_1.txt'
+            df1 = pd.read_csv('models/data/netflix_prize_dataset/combined_data_1.txt'
                               , header=None, names=['Cust_Id', 'Rating'], usecols=[0, 1])
-            df2 = pd.read_csv('../../models/data/case_scenario_2/netflix_prize_dataset/combined_data_2.txt',
+            df2 = pd.read_csv('models/data/netflix_prize_dataset/combined_data_2.txt',
                               header=None, names=['Cust_Id', 'Rating'], usecols=[0, 1])
-            df3 = pd.read_csv('../../models/data/case_scenario_2/netflix_prize_dataset/combined_data_3.txt',
+            df3 = pd.read_csv('models/data/netflix_prize_dataset/combined_data_3.txt',
                               header=None, names=['Cust_Id', 'Rating'], usecols=[0, 1])
-            df4 = pd.read_csv('../../models/data/case_scenario_2/netflix_prize_dataset/combined_data_4.txt',
+            df4 = pd.read_csv('models/data/netflix_prize_dataset/combined_data_4.txt',
                               header=None, names=['Cust_Id', 'Rating'], usecols=[0, 1])
 
             df1['Rating'] = df1['Rating'].astype(float)
@@ -366,10 +368,10 @@ if __name__ == '__main__':
     parser.add_argument('--should_save_checkpoints', action="store_true", help='Whether to save checkpoints of the model during computation')
 
     # hotel agent parameters from args
-    parser.add_argument('--nearby_agents_data_exchange_steps', type=int, default=1, help='Number of steps between data exchange with nearby agents')
+    parser.add_argument('--nearby_agents_data_exchange_steps', type=int, default=50, help='Number of steps between data exchange with nearby agents')
     parser.add_argument('--vicinity_radius', type=int, default=2, help='Radius of the vicinity for data exchange')
-    parser.add_argument('--memory_size', type=int, default=1000, help='Size of the memory of the agent')
-    parser.add_argument('--bandwidth', type=int, default=1000, help='Bandwidth of the agent')
+    parser.add_argument('--memory_size', type=int, default=10000, help='Size of the memory of the agent')
+    parser.add_argument('--bandwidth', type=int, default=5000, help='Bandwidth of the agent')
     parser.add_argument('--maximum_time_steps_for_exchange', type=int, default=1000, help='Maximum number of time steps for data exchange')
     parser.add_argument('--testing_data_amount', type=int, default=1000, help='Amount of testing data')
     parser.add_argument('--starting_dataset_size', type=int, default=0, help='Size of the starting dataset')
@@ -385,16 +387,25 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
+    if not os.path.exists('logs'):
+        os.makedirs('logs')
+
+    with open(os.path.join(os.getcwd(), 'logs', 'args_' + args.plots_name + '.txt'), 'w') as f:
+        for key, value in vars(args).items():
+            f.write('%s: %s\n' % (key, value))
+
     simulation_steps = args.sim_steps
     simulation_eval_steps = args.eval_steps
     simulation_save_steps = args.save_steps
     simulation_plot_steps = args.plot_steps
+    n_customers = args.num_customers
+    n_hotels = args.num_hotels
     should_resume = args.resume
     plots_name = args.plots_name
     approach = args.approach
     should_save_checkpoints = args.should_save_checkpoints
 
-    model = RecommendationSystemModel(10, 10, 5, 10, True, False,
+    model = RecommendationSystemModel(10, 10, n_hotels, n_customers, True, False,
                                       simulation_eval_steps, should_resume, approach, args)
 
     agent_counts = np.zeros((model.grid.width, model.grid.height))
@@ -407,8 +418,8 @@ if __name__ == '__main__':
     g.set(title="Number of agents on each cell of the grid")
     plt.show()
 
-    if not os.path.exists('plots'):
-        os.makedirs('plots')
+    if not os.path.exists('plots_v2'):
+        os.makedirs('plots_v2')
 
     resumed_number_of_steps = 0
 
@@ -453,7 +464,7 @@ if __name__ == '__main__':
             else:
                 g = sns.lineplot(data=agents_data, x="Step", y="MAE", hue="AgentID")
             g.set(title="{}: MAE over time - Time step ".format(plots_name) + str(i), ylabel="MAE")
-            plt.savefig(os.path.join(os.getcwd(), 'plots', 'mae_' + str(i) + '_' + plots_name + '.png'))
+            plt.savefig(os.path.join(os.getcwd(), 'plots_v2', 'mae_' + plots_name + '.png'))
             plt.show()
 
             if should_resume:
@@ -461,7 +472,7 @@ if __name__ == '__main__':
             else:
                 g = sns.lineplot(data=agents_data, x="Step", y="RMSE", hue="AgentID")
             g.set(title="{}: RMSE data over time - Time step ".format(plots_name) + str(i), ylabel="RMSE")
-            plt.savefig(os.path.join(os.getcwd(), 'plots', 'rmse_' + str(i) + '_' + plots_name + '.png'))
+            plt.savefig(os.path.join(os.getcwd(), 'plots_v2', 'rmse_' + plots_name + '.png'))
             plt.show()
 
     agents_data = model.datacollector.get_agent_vars_dataframe()
@@ -472,7 +483,7 @@ if __name__ == '__main__':
     else:
         g = sns.lineplot(data=agents_data, x="Step", y="MAE", hue="AgentID")
     g.set(title="{}: MAE over time - Last step ".format(plots_name), ylabel="MAE")
-    plt.savefig(os.path.join(os.getcwd(), 'plots', 'mae_' + 'last_step_' + plots_name + '.png'))
+    plt.savefig(os.path.join(os.getcwd(), 'plots_v2', 'mae_' + 'last_step_' + plots_name + '.png'))
     plt.show()
 
     if should_resume:
@@ -480,7 +491,7 @@ if __name__ == '__main__':
     else:
         g = sns.lineplot(data=agents_data, x="Step", y="RMSE", hue="AgentID")
     g.set(title="{}: RMSE data over time - Last step ".format(plots_name), ylabel="RMSE")
-    plt.savefig(os.path.join(os.getcwd(), 'plots', 'rmse_' + 'last_step_' + plots_name + '.png'))
+    plt.savefig(os.path.join(os.getcwd(), 'plots_v2', 'rmse_' + 'last_step_' + plots_name + '.png'))
     plt.show()
 
 

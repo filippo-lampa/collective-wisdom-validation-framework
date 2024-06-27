@@ -116,11 +116,13 @@ class RecommendationNN(nn.Module):
         return X
 
 
-def print_nn_architecture(model_name):
+def print_nn_architecture(model_name, user_id_mapping):
     if model_name == 'RecommendationNN':
-        model = RecommendationNN(1)
+        model = RecommendationNN(1, user_id_mapping)
+    elif model_name == 'NCF':
+        model = NCF(1, user_id_mapping)
     x = torch.tensor([[2400647, 11573]])
     y = model(x)
     dot = make_dot(y, params=dict(model.named_parameters()))
     dot.format = 'png'
-    dot.render('nn_model', directory=os.getcwd(), cleanup=True)
+    dot.render('nn_model_ncf', directory=os.getcwd(), cleanup=True)

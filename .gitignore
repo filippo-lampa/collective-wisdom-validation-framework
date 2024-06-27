@@ -7,7 +7,7 @@
 
 
 # Project-based stuff
-models/data/
+collective_system_analysis/case_scenario_2/models/data/
 
 *.pkl
 *.pt
@@ -19,6 +19,8 @@ models/data/
 collective_system_analysis/case_scenario_2/plots/
 collective_system_analysis/case_scenario_1/plots/
 collective_system_analysis/case_scenario_1/plots_countdown_version/
+collective_system_analysis/case_scenario_2/logs/
+collective_system_analysis/case_scenario_1/logs/
 
 # User-specific stuff
 .idea/

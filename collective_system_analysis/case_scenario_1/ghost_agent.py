@@ -55,6 +55,7 @@ class GhostAgent(mesa.Agent):
         self.should_use_protocol = should_use_protocol
         self.vicinity_radius = vicinity_radius
         self.bandwidth = bandwidth
+        self.target_bandwidth = bandwidth
         assert self.bandwidth <= self.n_states * self.n_actions
         self.data_inclusion_logic = data_inclusion_logic
         self.current_state = (7, 7)
@@ -83,8 +84,9 @@ class GhostAgent(mesa.Agent):
 
     def step(self):
 
-        if self.early_stopping and self.steps > self.max_steps:
+        if self.early_stopping and self.steps == self.max_steps:
             self.model.end_episode(True, self.steps)
+            return
 
         self.model.plot_env_status(self.steps)
 
@@ -96,6 +98,7 @@ class GhostAgent(mesa.Agent):
         self.goal_state = self.goal_state[0] * self.model.grid.width + self.goal_state[1]
 
         if self.should_use_protocol:
+
             nearby_agents = self.model.grid.get_neighbors(self.pos, moore=True, radius=self.vicinity_radius)
             for agent in nearby_agents:
                 if isinstance(agent, GhostAgent):
@@ -124,6 +127,7 @@ class GhostAgent(mesa.Agent):
             if self.pos == (next_state // self.model.grid.width, next_state % self.model.grid.width):
                 self.current_state = next_state
             self.steps += 1
+
         else:
 
             print("Ghost ", self.unique_id, " reached the goal state")
@@ -174,6 +178,9 @@ class GhostAgent(mesa.Agent):
         if state == goal_state:
             return self.catch_pacman_reward
         else:
+
+            if self.early_stopping and self.steps == self.max_steps:
+                return -50
 
             path_from_current_state = astar.astar([[0] * self.model.grid.width for _ in range(self.model.grid.height)],
                                                   astar.Node(self.current_state // self.model.grid.width, self.current_state % self.model.grid.width),
@@ -292,4 +299,9 @@ class GhostAgent(mesa.Agent):
 
         print("Ghost {} received data".format(self.unique_id))
 
+        return
+
+    def update_bandwidth(self, bandwidth):
+        self.bandwidth = bandwidth
+        print("Ghost ", self.unique_id, " increased bandwidth to ", self.bandwidth)
         return

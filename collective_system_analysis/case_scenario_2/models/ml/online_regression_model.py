@@ -40,11 +40,10 @@ Domain incremental learning means new instances of data can be added to the data
 means new classes can be added to the dataset.
 '''
 
-from river import metrics, datasets
-from river.evaluate import progressive_val_score, iter_progressive_val_score
+from river import metrics
+from river.evaluate import progressive_val_score
 
-from models.online_regression import OnlineRegression
-import copy
+from collective_system_analysis.case_scenario_2.models.online_regression import OnlineRegression
 
 
 class OnlineRegressionModel(OnlineRegression):

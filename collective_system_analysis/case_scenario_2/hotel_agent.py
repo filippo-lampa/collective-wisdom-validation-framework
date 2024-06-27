@@ -12,12 +12,11 @@ import torch
 from scipy.stats import entropy
 
 from sklearn.metrics.pairwise import cosine_similarity
-from sklearn.neighbors import NearestNeighbors
 
 import pickle
 
-from models.dl.online_regression_nn import OnlineRegressionNN
-from models.ml.online_regression_model import OnlineRegressionModel
+from collective_system_analysis.case_scenario_2.models.dl.online_regression_nn import OnlineRegressionNN
+from collective_system_analysis.case_scenario_2.models.ml.online_regression_model import OnlineRegressionModel
 
 
 class DataSelectionLogic(Enum):
@@ -461,20 +460,28 @@ class HotelAgent(mesa.Agent):
 
         if self.memory_management_logic.name == MemoryManagementLogic.NEAREST_NEIGHBORS.name:
             '''
-            Remove the data points that are closer to others to ensure having a high diversity of data points.
+            Remove the data points that are closer to the centroid of the cluster.
             '''
 
-            nbrs = NearestNeighbors(n_neighbors=2, algorithm='auto').fit(self.dataset[['user', 'item']])
+            # Prepare the dataset
+            data_points = self.dataset[['user', 'item']].values
+            num_points = len(self.dataset)
 
-            distances, indices = nbrs.kneighbors(self.dataset[['user', 'item']])
-            distances = pd.DataFrame(distances, columns=['distance1', 'distance2'])
-            indices = pd.DataFrame(indices, columns=['index1', 'index2'])
+            # Calculate the adapted centroids for each point
+            sum_points = np.sum(data_points, axis=0)
+            centroids = (sum_points - data_points) / (num_points - 1)
 
-            distances = pd.concat([distances, indices], axis=1)
+            # Calculate cosine similarities using vectorized operations
+            distances = cosine_similarity(data_points, centroids)
 
-            distances.sort_values(by='distance2', inplace=True)
+            # Add distances to the dataset
+            self.dataset['distance'] = distances.diagonal()
 
-            self.dataset = self.dataset.drop(distances.head(space_to_free)['index2'])
+            # Sort the dataset by distance and remove the closest points
+            self.dataset.sort_values(by='distance', inplace=True, ascending=False)
+            self.dataset = self.dataset.iloc[space_to_free:]
+            # remove the distance column
+            self.dataset.drop(columns=['distance'], inplace=True)
             self.dataset.reset_index(drop=True, inplace=True)
 
             return
