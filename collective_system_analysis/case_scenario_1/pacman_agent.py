@@ -29,13 +29,6 @@ class PacmanAgent(mesa.Agent):
 
         from ghost_agent import GhostAgent
 
-        # ghosts_positions = []
-        # walls_positions = []
-        # for cell_content, (x, y) in self.model.grid.coord_iter():
-        #     if not len(cell_content) == 0 and isinstance(cell_content[0], GhostAgent):
-        #         ghosts_positions.append((x, y))
-        #     elif not len(cell_content) == 0 and isinstance(cell_content[0], WallAgent):
-        #         walls_positions.append((x, y))
         ghost_agents = self.model.get_agents_of_type(GhostAgent)
         wall_agents = self.model.get_agents_of_type(WallAgent)
 

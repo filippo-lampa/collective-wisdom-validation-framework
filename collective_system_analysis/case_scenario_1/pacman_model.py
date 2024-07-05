@@ -91,16 +91,6 @@ class PacmanModel(Model):
 
         self.terrain_map = map_terrains()
 
-        # self.walls_positions = [(6, 0),
-        #                    (1, 1), (3, 1), (4, 1), (6, 1), (8, 1), (9, 1), (11, 1),
-        #                    (1, 3), (3, 3), (5, 3), (6, 3), (7, 3), (9, 3), (11, 3),
-        #                    (0, 5), (1, 5), (4, 5), (5, 5), (7, 5), (8, 5), (11, 5), (12, 5),
-        #                    (4, 6), (8, 6),
-        #                    (0, 7), (1, 7), (4, 7), (5, 7), (6, 7), (7, 7), (8, 7), (11, 7), (12, 7),
-        #                    (1, 9), (3, 9), (5, 9), (6, 9), (7, 9), (9, 9), (11, 9),
-        #                    (1, 11), (3, 11), (4, 11), (6, 11), (8, 11), (9, 11), (11, 11),
-        #                    (6, 12)]
-
         self.walls_positions = [(7, 1),
                                 (2, 2), (4, 2), (5, 2), (7, 2), (9, 2), (10, 2), (12, 2),
                                 (2, 4), (4, 4), (6, 4), (7, 4), (8, 4), (10, 4), (12, 4),
@@ -117,7 +107,7 @@ class PacmanModel(Model):
         all_walls_positions = set(self.walls_positions + boundary_walls)
 
         self.walls_positions = list(all_walls_positions)
-        '''
+
         pacman = PacmanAgent(0, self, self.args.should_penalize_terrain)
         self.schedule.add(pacman)
         x = self.random.randrange(self.grid.width)
@@ -149,7 +139,7 @@ class PacmanModel(Model):
             y = starting_ghosts_position[1]
 
             self.grid.place_agent(ghost, (x, y))
-        '''
+
         for i in range(self.num_ghosts + 1, self.num_ghosts + 1 + len(self.walls_positions)):
             wall = WallAgent(i, self)
             self.schedule.add(wall)
@@ -197,18 +187,6 @@ class PacmanModel(Model):
         for agent in self.schedule.agents:
             if isinstance(agent, GhostAgent):
                 agent.init_agent()
-
-        '''
-        agent_counts = np.zeros((model.grid.width, model.grid.height))
-        for cell_content, (x, y) in model.grid.coord_iter():
-            agent_count = len(cell_content)
-            agent_counts[x][y] = agent_count
-
-        g = sns.heatmap(agent_counts.T, cmap="viridis", annot=True, cbar=False, square=True)
-        g.figure.set_size_inches(4, 4)
-        g.set(title="Number of agents on each cell of the grid")
-        plt.show()
-        '''
 
     def plot_map_terrains(self):
         #plot grass terrain in green, mud terrain in brown and standard terrain in yellow.

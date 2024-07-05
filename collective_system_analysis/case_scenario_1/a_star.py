@@ -20,7 +20,7 @@ class Node:
 
 
 def heuristic(node, goal):
-    # Using Manhattan distance heuristic
+    # Manhattan distance heuristic
     return abs(node.x - goal.x) + abs(node.y - goal.y)
 
 

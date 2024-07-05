@@ -13,23 +13,14 @@ from pacman_agent import PacmanAgent
 
 class DataInclusionLogic(Enum):
     # Substitute the entries in the q_table where the value in the q_table is lower than the value received from the
-    # exchange for the corresponding state and action. The value in the q_table is the reward for the state and action,
-    # therefore this is an optimistic approach where we tend to follow the actions that have given the best rewards
-    # to the other agents. More active attacking strategy. We use the experience of others to know what to do, we find
-    # higher values for our q-table only from the actions of others and learn what to avoid from our own actions.
-    # PS: the space of all the actions to avoid is much larger than the space of all the actions to follow, therefore
-    # this approach is likely to be less efficient than the INCLUDE_LOWER_VALUES approach.
+    # exchange for the corresponding state and action.
     INCLUDE_HIGHER_VALUES = 1
     # Substitute the entries in the q_table where the value in the q_table is higher than the value received from the
-    # exchange for the corresponding state and action. The value in the q_table is the reward for the state and action,
-    # therefore this is a pessimistic approach where we tend to avoid the actions that have given the worst rewards to
-    # the other agents. More passive defending strategy. We use the experience of other to know what to avoid, we find
-    # higher values for our q-table only from our own actions.
+    # exchange for the corresponding state and action.
     INCLUDE_LOWER_VALUES = 2
-    # Include in the q_table the entries in data that are not present in the q_table. This approach is likely to be used
-    # in combination with the INCLUDE_HIGHER_VALUES and INCLUDE_LOWER_VALUES approaches. It is mainly useful in the early
-    # stages of the training to speed up the learning process with respects to states that the agent has not visited yet.
+    # Include in the q_table the entries in data that are not present in the q_table.
     INCLUDE_NOT_PRESENT_VALUES = 3
+
 
 class DataSelectionLogic(Enum):
     HIGHEST_REWARD = 1
@@ -192,18 +183,6 @@ class GhostAgent(mesa.Agent):
                                                     astar.Node(goal_state // self.model.grid.width, goal_state % self.model.grid.width), self.model.get_wall_positions(),
                                                     self.model, self.should_penalize_terrain)
 
-            #current_distance = len(path_from_current_state)
-            #next_distance = len(path_from_next_state)
-
-            #current_distance = manhattan_distance(self.current_state, goal_state)
-            #next_distance = manhattan_distance(state, goal_state)
-
-            # if next_distance < current_distance:
-            #     proximity_reward = self.get_closer_reward
-            # else:
-            #     proximity_reward = self.get_farther_reward
-
-            #proximity_reward = self.get_closer_reward * (1 / len(path_from_next_state))
             proximity_reward = len(path_from_current_state) - len(path_from_next_state)
 
             agents_in_next_state = self.model.grid.get_cell_list_contents((state // self.model.grid.width, state % self.model.grid.width))
@@ -212,7 +191,6 @@ class GhostAgent(mesa.Agent):
             else:
                 wall_penalty = 0
 
-            #reward = proximity_reward
             reward = proximity_reward + wall_penalty
             return reward
 
@@ -230,7 +208,6 @@ class GhostAgent(mesa.Agent):
     def select_data_to_send(self):
 
         def select_highest_reward_entries():
-            #get the self.bandwidth highest values in the q_table and return tuples of the form (state, action, reward)
             entries_to_select = []
             q_table_copy = np.copy(self.q_table)
             for i in range(self.bandwidth):
@@ -268,15 +245,11 @@ class GhostAgent(mesa.Agent):
     def get_data_from_exchange(self, data):
 
         def include_higher_values(data):
-            #substitute the entries in the q_table where the value in the q_table is lower than the value in
-            # [data['state'], data['action']] for the corresponding state and action
             for row in data:
                 if self.q_table[row['state'], row['action']] < row['reward']:
                     self.q_table[row['state'], row['action']] = row['reward']
 
         def include_lower_values(data):
-            #substitute the entries in the q_table where the value in the q_table is higher than the value in
-            # [data['state'], data['action']] for the corresponding state and action
             for row in data:
                 if row['reward'] == 0.0:
                     continue
@@ -284,7 +257,6 @@ class GhostAgent(mesa.Agent):
                     self.q_table[row['state'], row['action']] = row['reward']
 
         def include_not_present_values(data):
-            #include in the q_table the entries in data that are not present in the q_table
             for row in data:
                 if self.q_table[row['state'], row['action']] == 0.0:
                     self.q_table[row['state'], row['action']] = row['reward']

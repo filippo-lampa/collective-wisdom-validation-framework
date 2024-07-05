@@ -418,8 +418,8 @@ if __name__ == '__main__':
     g.set(title="Number of agents on each cell of the grid")
     plt.show()
 
-    if not os.path.exists('plots_v2'):
-        os.makedirs('plots_v2')
+    if not os.path.exists('plots'):
+        os.makedirs('plots')
 
     resumed_number_of_steps = 0
 
@@ -464,7 +464,7 @@ if __name__ == '__main__':
             else:
                 g = sns.lineplot(data=agents_data, x="Step", y="MAE", hue="AgentID")
             g.set(title="{}: MAE over time - Time step ".format(plots_name) + str(i), ylabel="MAE")
-            plt.savefig(os.path.join(os.getcwd(), 'plots_v2', 'mae_' + plots_name + '.png'))
+            plt.savefig(os.path.join(os.getcwd(), 'plots', 'mae_' + plots_name + '.png'))
             plt.show()
 
             if should_resume:
@@ -472,7 +472,7 @@ if __name__ == '__main__':
             else:
                 g = sns.lineplot(data=agents_data, x="Step", y="RMSE", hue="AgentID")
             g.set(title="{}: RMSE data over time - Time step ".format(plots_name) + str(i), ylabel="RMSE")
-            plt.savefig(os.path.join(os.getcwd(), 'plots_v2', 'rmse_' + plots_name + '.png'))
+            plt.savefig(os.path.join(os.getcwd(), 'plots', 'rmse_' + plots_name + '.png'))
             plt.show()
 
     agents_data = model.datacollector.get_agent_vars_dataframe()
@@ -483,7 +483,7 @@ if __name__ == '__main__':
     else:
         g = sns.lineplot(data=agents_data, x="Step", y="MAE", hue="AgentID")
     g.set(title="{}: MAE over time - Last step ".format(plots_name), ylabel="MAE")
-    plt.savefig(os.path.join(os.getcwd(), 'plots_v2', 'mae_' + 'last_step_' + plots_name + '.png'))
+    plt.savefig(os.path.join(os.getcwd(), 'plots', 'mae_' + 'last_step_' + plots_name + '.png'))
     plt.show()
 
     if should_resume:
@@ -491,7 +491,7 @@ if __name__ == '__main__':
     else:
         g = sns.lineplot(data=agents_data, x="Step", y="RMSE", hue="AgentID")
     g.set(title="{}: RMSE data over time - Last step ".format(plots_name), ylabel="RMSE")
-    plt.savefig(os.path.join(os.getcwd(), 'plots_v2', 'rmse_' + 'last_step_' + plots_name + '.png'))
+    plt.savefig(os.path.join(os.getcwd(), 'plots', 'rmse_' + 'last_step_' + plots_name + '.png'))
     plt.show()
 
 

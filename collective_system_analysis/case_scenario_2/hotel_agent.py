@@ -20,85 +20,19 @@ from collective_system_analysis.case_scenario_2.models.ml.online_regression_mode
 
 
 class DataSelectionLogic(Enum):
-    #EXPECTED RANKING:
 
-    #ORDERING_UNTOUCHED_LAST-FIFO done
-    #ORDERING_LOSS-MOST_UNCERTAIN done
-    #ORDERING_LOSS-ENTROPY done / ORDERING_LOSS-NEAREST_NEIGHBORS done
-    #ORDERING_LOSS-FIFO done / ORDERING_LOSS-MOST_RECENTLY_SENT (not necessary)
-    #ORDERING_UNTOUCHED_LAST-ENTROPY done/ ORDERING_UNTOUCHED_LAST-NEAREST_NEIGHBORS done
-    #ORDERING_UNTOUCHED_FIRST-ENTROPY / ORDERING_UNTOUCHED_FIRST-NEAREST_NEIGHBORS
-    #ORDERING_RANDOM-ENTROPY / ORDERING_RANDOM-NEAREST_NEIGHBORS
-    #ORDERING_RANDOM-FIFO done
-    #ORDERING_RANDOM-MOST_RECENTLY_SENT
-    #ORDERING_CLUSTERING-MOST_RECENTLY_SENT
-    #ORDERING_CLUSTERING-FIFO
-    #ORDERING_CLUSTERING-NEAREST_NEIGHBORS
-    #ORDERING_CLUSTERING-ENTROPY
-    #ORDERING_UNTOUCHED_LAST-MOST_RECENTLY_SENT
-    #ORDERING_UNTOUCHED_FIRST-MOST_RECENTLY_SENT
-    #ORDERING_UNTOUCHED_FIRST-FIFO to do
-
-
-    # If we choose the first entries it is FIFO, the first data points to be collected are the first to be sent.
-    # This means that as long as we use a fifo
-    # memory management logic, the data points that are sent are the ones that are collected first, and if the number of
-    # time steps for sharing data are lower than the amount of time steps after which we override data, we are sure that
-    # all the data points are sent at least once, and are therefore spread across the network. This means that data are
-    # surely spread until we fill the memory. After that, the data will only be sent by an agent if it first sends them,
-    # and then receives the new ones from the other agent/s. However, since also the other agents will have a full memory,
-    # one of the two agents will have to remove some data to make space for the new ones, and therefore some data will be
-    # lost at each exchange without checking the amount of information that is lost.
-    # On the other side, if we use the other memory management logics, we still don't have the guarantee that all the data
-    # points are sent at least once, but we can have a better control on the amount of information that is lost at each
-    # exchange, therefore the performance of the model comes down to the best memory management logic that we can use and
-    # to the trade-off between the amount of information that is lost at each exchange and the amount of information that
-    # is shared across the network. Fifo and most recently sent, in this case, should act the same way and be interchangable.
-    # Entropy and nearest neighbors are independent from this data selection logic. Most uncertain is not compatible with
-    # this data selection logic.
-    # The size of the bandwidth at that point really comes down to the weight we want to give
-    # to our own experience and to the experience of the other agents.
-    # Naive approach.
-    # If we select the last entries, we are sending the newest data points to the other agents, leaving outdated data
-    # points that are probably outdated or already sent to the other agents. With a fifo memory management logic, this
-    # ensures that newest data are sent and oldest data are removed, potentially maximizing information sharing and
-    # minimizing the amount of information that is lost if we are sure that new data are more important than old data.
-    # With most recently sent, we are removing the newest data points. If manage to send data before receving new data,
-    # it is optimal since we shared ours and overrode them with the new ones. In the other case, i'm removing the
-    # newest data points and sending the oldest ones which could already be in the system and outdated.
+    # If we choose the first entries it is FIFO, the first data points to be collected are the first to be sent,
+    # otherwise, we are sending the newest data points to the other agents.
     ORDERING_UNTOUCHED = 0,
-    # The data points are sent in order of increasing loss. This means that the data points that are sent are the ones
-    # that our model is more confident about, and therefore, since we are building a collective knowledge, may be more
-    # beneficial for the other agents. This approach holds the potential to provide better performances than the FIFO since
-    # it aims to maximize the amount of information that is shared across the network, but it also could mean introducing
-    # more noise in the other agents' models, since especially in the early stages the model could be less accurate,
-    # gradually drifting towards the wrong data points. Using this approach with a FIFO memory management logic means
-    # ensuring self-sabotage, since we are removing the data points that could be more beneficial for the other agents.
-    # Same for most recently sent, since the data points that are sent are the ones with the lowest loss, and we are
-    # them.
-    # With this approach, we can use the most_uncertain memory management logic to remove the data points that are more
-    # uncertain, and therefore more likely to be less beneficial for the other agents. Nearest neighbors is independent
-    # from this data selection logic, same goes for entropy.
+    # The data points are sent in order of increasing loss.
     ORDERING_LOSS = 1,
-    # The data points are sent in order of increasing date. Equivalent to FIFO, but potentially more precise and useful
-    # to restore the order of the data points in the other agents' datasets. Same considerations as FIFO. May be useful
-    # to use when we are precisely interested in the order of the data points in the dataset, which is not the case in this
-    # scenario.
+    # The data points are sent in order of increasing date.
     ORDERING_DATE = 2,
-    # The data points are sent in random order. This means that the data points that are sent are randomly selected from
-    # the dataset, trying to get a sample of the distribution of the data points. All the memory logics are independent
-    # from this data selection logic, and its performance comes down to it.
+    # The data points are sent in random order.
     RANDOM = 3
-    # The centroids of the clusters are sent to the other agents. With semantically meaningful data, this could be useful,
-    # but in this case, since we are dealing with user ids, item ids, and ratings, it is not. System performances with this
-    # selection logic independent from the memory management logic, except for the nearest neighbors memory management
-    # since removing similar data points could reduce the quality of the centroids and therefore the quality of the data
-    # points that are sent to the other agents. There is also a correlation with the entropy memory management logic, since
-    # we are removing the data that are the most similar to the others, and therefore the most likely to be the centroids.
+    # The centroids of the clusters are sent to the other agents.
     CLUSTERING = 4
-    # The data points with loss values above a certain threshold are sent. Same considerations as the loss data selection
-    # logic, just gives slightly more control on the amount of information that is shared across the network, for cases
-    # where we know the application field.
+    # The data points with loss values above a certain threshold are sent.
     LOSS_THRESHOLD = 5
 
 
@@ -236,8 +170,9 @@ class HotelAgent(mesa.Agent):
                             self.exchange_data(agent)
 
     def collect_data(self):
-
-        #get data from the environment (next data from the environment dataset)
+        '''
+        Collect data from the environment and train the model with it.
+        '''
         data = self.environment_dataset.iloc[0]
         if len(self.dataset) + 1 > self.memory_size:
             self.manage_memory(data)
@@ -322,30 +257,9 @@ class HotelAgent(mesa.Agent):
         '''
 
         #remove entries from data if they are already present in the dataset
-
-        '''
-        indexes_to_remove = []
-        for index, row in data.iterrows():
-            for index_dataset, row_dataset in self.dataset.iterrows():
-                if row['user'] == row_dataset['user'] and row['item'] == row_dataset['item']:
-                    indexes_to_remove.append(index)
-                    break
-        '''
-        '''
-        # Create a set of (user, item) tuples for fast lookup
-        dataset_tuples = set(zip(self.dataset['user'], self.dataset['item']))
-
-        # Find indexes to remove by checking if (user, item) tuple exists in the set
-        indexes_to_remove = [index for index, row in data.iterrows() if (row['user'], row['item']) in dataset_tuples]
-
-        data = data.drop(indexes_to_remove)
-        '''
-
         data.reset_index(drop=True, inplace=True)
         merged = pd.merge(data, self.dataset, on=['user', 'item'], how='left', indicator='Exist')
-        #merged = merged.drop('Rating', inplace=True, axis=1)
         merged['Exist'] = np.where(merged.Exist == 'both', True, False)
-
         data = merged[merged['Exist'] == False].drop(columns=['Exist']).rename(columns={'Rating_x': 'Rating'})
 
         if self.data_selection_logic.name == DataSelectionLogic.ORDERING_LOSS.name:
@@ -463,24 +377,19 @@ class HotelAgent(mesa.Agent):
             Remove the data points that are closer to the centroid of the cluster.
             '''
 
-            # Prepare the dataset
             data_points = self.dataset[['user', 'item']].values
             num_points = len(self.dataset)
 
-            # Calculate the adapted centroids for each point
             sum_points = np.sum(data_points, axis=0)
             centroids = (sum_points - data_points) / (num_points - 1)
 
-            # Calculate cosine similarities using vectorized operations
             distances = cosine_similarity(data_points, centroids)
 
-            # Add distances to the dataset
             self.dataset['distance'] = distances.diagonal()
 
-            # Sort the dataset by distance and remove the closest points
             self.dataset.sort_values(by='distance', inplace=True, ascending=False)
             self.dataset = self.dataset.iloc[space_to_free:]
-            # remove the distance column
+
             self.dataset.drop(columns=['distance'], inplace=True)
             self.dataset.reset_index(drop=True, inplace=True)
 
